@@ -90,9 +90,10 @@ class OpenAIAnalyzer:
     ) -> str:
         prompt = (
             "Voce esta analisando um frame de video para uma base de conhecimento. "
-            "Anote objetivamente tudo que for util: pessoas, tela, codigo, produto, "
-            "interfaces, gestos, textos visiveis, contexto e qualquer detalhe que "
-            "ajude alguem a recuperar essa informacao depois.\n\n"
+            "Responda em portugues, de forma compacta, em ate 8 bullets curtos. "
+            "Inclua apenas detalhes uteis para busca futura: pessoas, tela, codigo, "
+            "produto, interfaces, gestos, textos visiveis, contexto e acoes demonstradas. "
+            "Nao use cabecalhos longos.\n\n"
             "Titulo: %s\nTimestamp: %s\nOCR local: %s\nTrecho de fala perto do frame: %s"
             % (
                 metadata.title or metadata.source,
@@ -136,11 +137,11 @@ class OpenAIAnalyzer:
         return KnowledgeSynthesis(
             summary=str(parsed.get("summary") or text).strip(),
             chapters=list(parsed.get("chapters") or []),
-            entities=[str(item) for item in parsed.get("entities") or []],
-            tools_or_products=[str(item) for item in parsed.get("tools_or_products") or []],
-            claims=[str(item) for item in parsed.get("claims") or []],
-            action_items=[str(item) for item in parsed.get("action_items") or []],
-            questions=[str(item) for item in parsed.get("questions") or []],
+            entities=_normalize_items(parsed.get("entities")),
+            tools_or_products=_normalize_items(parsed.get("tools_or_products")),
+            claims=_normalize_items(parsed.get("claims")),
+            action_items=_normalize_items(parsed.get("action_items")),
+            questions=_normalize_items(parsed.get("questions")),
             raw=parsed if parsed else {"raw_text": text},
         )
 
@@ -243,3 +244,27 @@ def _extract_json(text: str) -> Dict[str, Any]:
             except json.JSONDecodeError:
                 return {}
     return {}
+
+
+def _normalize_items(value: Any) -> List[str]:
+    if not value:
+        return []
+    items = value if isinstance(value, list) else [value]
+    normalized = []
+    for item in items:
+        if isinstance(item, dict):
+            name = item.get("name") or item.get("title") or item.get("item")
+            item_type = item.get("type") or item.get("kind")
+            notes = item.get("notes") or item.get("description")
+            if not name:
+                normalized.append(json.dumps(item, ensure_ascii=False, sort_keys=True))
+                continue
+            text = str(name)
+            if item_type:
+                text += " (%s)" % item_type
+            if notes:
+                text += ": %s" % notes
+            normalized.append(text)
+        else:
+            normalized.append(str(item))
+    return [item.strip() for item in normalized if item.strip()]

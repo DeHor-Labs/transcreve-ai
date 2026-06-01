@@ -8,10 +8,29 @@ version = "0.1.0"
 description = "TranscreveAI extrai dossies multimodais de videos para base de conhecimento."
 readme = "README.md"
 requires-python = ">=3.9"
+license = "MIT"
+keywords = ["ai", "video", "transcription", "ocr", "knowledge-base", "yt-dlp"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Multimedia :: Video",
+  "Topic :: Text Processing :: Indexing",
+]
 dependencies = [
   "yt-dlp>=2024.1.0",
   "openai>=1.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/nikolasdehor/transcreve-ai"
+Repository = "https://github.com/nikolasdehor/transcreve-ai"
+Issues = "https://github.com/nikolasdehor/transcreve-ai/issues"
 
 [project.scripts]
 transcreveai = "video_kb.cli:main"

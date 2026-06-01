@@ -115,8 +115,13 @@ class VideoKnowledgePipeline:
                 result.transcript_text = text
                 result.transcript_segments = segments
 
-                for index in select_visual_frames(result.frames, self.options.visual_limit):
+                visual_indexes = select_visual_frames(result.frames, self.options.visual_limit)
+                for position, index in enumerate(visual_indexes, start=1):
                     frame = result.frames[index]
+                    print(
+                        "   IA visual %d/%d em %s..."
+                        % (position, len(visual_indexes), frame.image_path)
+                    )
                     frame_path = run_dir / frame.image_path
                     context = transcript_near(result.transcript_segments, frame.timestamp)
                     frame.visual_note = analyzer.describe_frame(

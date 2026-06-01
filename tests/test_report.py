@@ -9,6 +9,7 @@ from video_kb.models import (
 )
 from video_kb.report import render_markdown
 from video_kb.utils import format_timestamp, slugify
+from video_kb.ai import _normalize_items
 
 
 class ReportTests(unittest.TestCase):
@@ -75,6 +76,20 @@ class ReportTests(unittest.TestCase):
 
         self.assertIn("![frame](frames/frame.jpg)", markdown)
         self.assertIn("Frame capturado", markdown)
+
+    def test_normalize_items_formats_structured_ai_lists(self):
+        items = _normalize_items(
+            [
+                {"name": "Flow Labs", "type": "tool"},
+                {"title": "Open question", "description": "Needs review"},
+                "plain text",
+            ]
+        )
+
+        self.assertEqual(
+            items,
+            ["Flow Labs (tool)", "Open question: Needs review", "plain text"],
+        )
 
 
 if __name__ == "__main__":
