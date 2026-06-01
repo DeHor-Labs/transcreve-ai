@@ -1,0 +1,74 @@
+<svg width="1280" height="420" viewBox="0 0 1280 420" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">TranscreveAI banner</title>
+  <desc id="desc">A product banner showing video, audio, OCR, vision, and knowledge-base outputs flowing through TranscreveAI.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="420" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#07111F"/>
+      <stop offset="0.48" stop-color="#102637"/>
+      <stop offset="1" stop-color="#173124"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="178" y1="76" x2="1040" y2="344" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2DD4BF"/>
+      <stop offset="0.48" stop-color="#60A5FA"/>
+      <stop offset="1" stop-color="#FBBF24"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="420" rx="36" fill="url(#bg)"/>
+  <path d="M0 332C130 286 219 304 332 328C470 358 575 368 706 319C841 268 974 260 1280 302V420H0V332Z" fill="#0B1B2A" opacity="0.72"/>
+  <path d="M84 88H1196" stroke="#FFFFFF" stroke-opacity="0.06"/>
+  <path d="M84 332H1196" stroke="#FFFFFF" stroke-opacity="0.06"/>
+  <path d="M108 110C205 74 295 78 382 124C473 171 562 178 664 134C783 82 884 83 1007 139C1060 163 1116 174 1190 160" stroke="url(#accent)" stroke-width="3" stroke-linecap="round" opacity="0.55"/>
+
+  <g filter="url(#shadow)">
+    <rect x="86" y="112" width="250" height="176" rx="22" fill="#0E1B2B" stroke="#2DD4BF" stroke-opacity="0.42"/>
+    <rect x="110" y="138" width="132" height="18" rx="9" fill="#2DD4BF" fill-opacity="0.92"/>
+    <rect x="110" y="172" width="202" height="90" rx="14" fill="#142A40"/>
+    <path d="M186 194L186 240L226 217L186 194Z" fill="#F8FAFC"/>
+    <rect x="258" y="139" width="54" height="10" rx="5" fill="#94A3B8" opacity="0.65"/>
+    <rect x="258" y="158" width="38" height="10" rx="5" fill="#94A3B8" opacity="0.38"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="394" y="88" width="226" height="224" rx="24" fill="#0F2031" stroke="#60A5FA" stroke-opacity="0.42"/>
+    <rect x="424" y="122" width="166" height="12" rx="6" fill="#60A5FA" fill-opacity="0.9"/>
+    <path d="M430 170C451 143 475 143 497 170C518 197 543 197 566 170" stroke="#E2E8F0" stroke-width="9" stroke-linecap="round" opacity="0.82"/>
+    <path d="M430 222C451 195 475 195 497 222C518 249 543 249 566 222" stroke="#FBBF24" stroke-width="9" stroke-linecap="round" opacity="0.88"/>
+    <rect x="424" y="268" width="78" height="12" rx="6" fill="#94A3B8" opacity="0.62"/>
+    <rect x="516" y="268" width="48" height="12" rx="6" fill="#94A3B8" opacity="0.36"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="682" y="112" width="220" height="176" rx="22" fill="#0E1B2B" stroke="#FBBF24" stroke-opacity="0.42"/>
+    <rect x="710" y="142" width="164" height="16" rx="8" fill="#FBBF24" fill-opacity="0.92"/>
+    <rect x="710" y="184" width="152" height="10" rx="5" fill="#CBD5E1" opacity="0.75"/>
+    <rect x="710" y="208" width="124" height="10" rx="5" fill="#CBD5E1" opacity="0.55"/>
+    <rect x="710" y="232" width="142" height="10" rx="5" fill="#CBD5E1" opacity="0.45"/>
+    <path d="M792 166V260" stroke="#FFFFFF" stroke-opacity="0.07"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="956" y="84" width="238" height="228" rx="26" fill="#101F2B" stroke="#A7F3D0" stroke-opacity="0.36"/>
+    <rect x="984" y="118" width="102" height="14" rx="7" fill="#A7F3D0" fill-opacity="0.84"/>
+    <rect x="984" y="156" width="174" height="24" rx="8" fill="#1B3543"/>
+    <rect x="984" y="194" width="146" height="24" rx="8" fill="#1B3543"/>
+    <rect x="984" y="232" width="162" height="24" rx="8" fill="#1B3543"/>
+    <circle cx="1136" cy="125" r="18" fill="#2DD4BF" fill-opacity="0.88"/>
+    <path d="M1128 125L1134 131L1145 119" stroke="#07111F" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <path d="M336 200H394" stroke="#94A3B8" stroke-width="2" stroke-dasharray="8 10" opacity="0.8"/>
+  <path d="M620 200H682" stroke="#94A3B8" stroke-width="2" stroke-dasharray="8 10" opacity="0.8"/>
+  <path d="M902 200H956" stroke="#94A3B8" stroke-width="2" stroke-dasharray="8 10" opacity="0.8"/>
+
+  <text x="88" y="360" fill="#E2E8F0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="700">video</text>
+  <text x="394" y="360" fill="#E2E8F0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="700">audio + frames</text>
+  <text x="682" y="360" fill="#E2E8F0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="700">OCR + vision</text>
+  <text x="956" y="360" fill="#E2E8F0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="700">knowledge.md</text>
+
+  <text x="88" y="64" fill="#F8FAFC" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="44" font-weight="800" letter-spacing="0">TranscreveAI</text>
+  <text x="650" y="64" fill="#CBD5E1" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500">video links -&gt; knowledge dossiers</text>
+</svg>
