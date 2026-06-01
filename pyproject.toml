@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "transcreve-ai"
+version = "0.1.0"
+description = "TranscreveAI extrai dossies multimodais de videos para base de conhecimento."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "yt-dlp>=2024.1.0",
+  "openai>=1.0.0",
+]
+
+[project.scripts]
+transcreveai = "video_kb.cli:main"
+transcreve-ai = "video_kb.cli:main"
+video-kb = "video_kb.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["video_kb*"]
