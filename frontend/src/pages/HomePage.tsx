@@ -21,7 +21,13 @@ export function HomePage() {
           >
             Transcreve<span className="text-accent">AI</span>
           </Link>
-          <nav aria-label="Navegacao principal">
+          <nav aria-label="Navegacao principal" className="flex items-center gap-5">
+            <Link
+              to="/search"
+              className="text-text-muted text-sm hover:text-text-primary transition-colors font-heading"
+            >
+              Buscar
+            </Link>
             <a
               href="#historico"
               className="text-text-muted text-sm hover:text-text-primary transition-colors font-heading"

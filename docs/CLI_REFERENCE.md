@@ -5,6 +5,8 @@
 | Comando | Descricao |
 |---|---|
 | `transcreveai analyze SOURCE` | Analisa um link ou arquivo de video |
+| `transcreveai index [RUN_ID\|--all]` | Indexa runs para busca semantica (RAG) |
+| `transcreveai ask PERGUNTA` | Faz uma pergunta sobre os videos indexados |
 | `transcreveai serve` | Inicia o servidor web com API e SPA |
 | `transcreveai runs list` | Lista o historico de runs |
 | `transcreveai runs show RUN_ID` | Exibe detalhes de um run |
@@ -98,6 +100,160 @@ transcreveai analyze "https://youtu.be/..." --force
 
 # Banco de indice customizado
 transcreveai --index-db ~/projetos/meu.db analyze "https://youtu.be/..."
+```
+
+---
+
+## `transcreveai index`
+
+Indexa um ou todos os runs para busca semantica. Requer o extra `[rag]`:
+
+```bash
+pip install 'transcreve-ai[rag]'
+```
+
+```bash
+transcreveai index [RUN_ID | --all] [opcoes]
+```
+
+### Argumentos
+
+- `RUN_ID`: ID do run a indexar (posicional, omitir quando `--all` for passado).
+
+### Opcoes
+
+| Flag | Descricao | Default |
+|---|---|---|
+| `--all` | Indexa todos os runs ainda nao indexados | `false` |
+| `--provider NOME` | Provider de embedding: `openai`, `local` ou `gemini`. Sobreescreve `VIDEO_KB_PROVIDER`. | `openai` |
+| `--force` | Reindexar mesmo que o run ja tenha embeddings | `false` |
+
+O `--index-db` global tambem e respeitado.
+
+### Comportamento
+
+- Pula runs cujo `analysis_path` nao existe no disco.
+- Pula runs ja indexados a menos que `--force` seja passado.
+- Com `--force`, apaga os embeddings anteriores e regenera todos os chunks.
+- Levanta erro se o provider atual gerar vetores com dimensao diferente da ja armazenada para o mesmo run (use `--force` para resolver).
+
+### Modelos de embedding por provider
+
+| Provider | Modelo | Offline |
+|---|---|:---:|
+| `openai` | `text-embedding-3-small` | Nao |
+| `local` | `all-MiniLM-L6-v2` | Sim |
+| `gemini` | `text-embedding-004` | Nao |
+
+### Exemplos
+
+```bash
+# Indexar um run especifico
+transcreveai index 20260601T060803Z-youtu-be-abc123
+
+# Indexar todos os runs nao indexados (provider padrao)
+transcreveai index --all
+
+# Indexar tudo com provider offline
+transcreveai index --all --provider local
+
+# Forcar reindexacao com provider diferente
+transcreveai index 20260601T060803Z-youtu-be-abc123 --provider gemini --force
+
+# Com banco de indice customizado
+transcreveai --index-db ~/projetos/meu.db index --all
+
+# Definir provider via variavel de ambiente
+VIDEO_KB_PROVIDER=local transcreveai index --all
+```
+
+---
+
+## `transcreveai ask`
+
+Faz uma pergunta sobre os videos indexados usando RAG. Requer o extra `[rag]`:
+
+```bash
+pip install 'transcreve-ai[rag]'
+```
+
+```bash
+transcreveai ask PERGUNTA [opcoes]
+```
+
+### Argumento
+
+- `PERGUNTA`: Texto da pergunta em linguagem natural (posicional).
+
+### Opcoes
+
+| Flag | Descricao | Default |
+|---|---|---|
+| `--provider NOME` | Provider de embedding e sintese: `openai`, `local` ou `gemini`. Sobreescreve `VIDEO_KB_PROVIDER`. | `openai` |
+| `--top-k N` | Numero de trechos de contexto a recuperar | `5` |
+| `--run-ids ID [ID...]` | Limita a busca a runs especificos | todos |
+| `--search-only` | Exibe apenas os trechos recuperados, sem chamar LLM para sintese | `false` |
+
+O `--index-db` global tambem e respeitado.
+
+### Comportamento
+
+- Vetoriza a pergunta com o provider escolhido.
+- Busca os `top-k` chunks mais similares por cosseno no SQLite.
+- Se `--search-only`: imprime os trechos com score, tipo e capitulo (quando disponivel) e encerra.
+- Caso contrario: monta prompt com os trechos como contexto e chama o LLM do provider para gerar resposta.
+- A resposta e instruida a citar os videos usados e a dizer explicitamente quando a informacao nao esta nos videos indexados.
+
+### Saida padrao (RAG completo)
+
+```
+Pergunta: o que foi dito sobre autenticacao?
+
+Resposta:
+No video "Como usar TranscreveAI" foi mencionado que...
+
+Fontes:
+  [1] Como usar TranscreveAI (20260601T060803Z-youtu-be-abc123) - score: 87.3%
+  [2] Aula de Python (20260531T120000Z-video-mp4) - score: 74.1%
+```
+
+### Saida com `--search-only`
+
+```
+Top 3 trechos para: "autenticacao"
+
+[1] Como usar TranscreveAI (summary) - score: 87.3%
+    O video demonstra o fluxo de autenticacao via OAuth2...
+    Capitulo em: 3:42
+
+[2] Aula de Python (transcript) - score: 74.1%
+    ...implementacao do middleware de autenticacao JWT...
+```
+
+### Exemplos
+
+```bash
+# Pergunta simples (RAG completo, provider padrao)
+transcreveai ask "o que foi dito sobre autenticacao?"
+
+# Busca sem sintese (inspecionar chunks indexados)
+transcreveai ask "autenticacao" --search-only
+
+# Limitar a dois runs
+transcreveai ask "quais ferramentas foram mostradas?" \
+  --run-ids 20260601T060803Z-youtu-be-abc123 20260531T120000Z-video-mp4
+
+# Usar provider offline
+transcreveai ask "resumo dos capitulos" --provider local
+
+# Mais contexto (10 trechos)
+transcreveai ask "fluxo de deploy" --top-k 10
+
+# Com banco de indice customizado
+transcreveai --index-db ~/projetos/meu.db ask "qual e a arquitetura?"
+
+# Definir provider via variavel de ambiente
+VIDEO_KB_PROVIDER=gemini transcreveai ask "o que foi discutido?"
 ```
 
 ---

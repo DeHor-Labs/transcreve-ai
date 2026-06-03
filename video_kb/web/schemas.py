@@ -70,3 +70,42 @@ class SubmitResponse(BaseModel):
 class ErrorResponse(BaseModel):
     error: str
     message: str
+
+
+# ---------------------------------------------------------------------------
+# Schemas de busca semantica (RAG)
+# ---------------------------------------------------------------------------
+
+
+class SearchRequest(BaseModel):
+    query: str
+    top_k: int = 5
+    run_ids: list[str] | None = None
+
+
+class SearchResult(BaseModel):
+    run_id: str
+    title: str
+    source_url: str
+    chunk_type: str
+    excerpt: str
+    score: float
+    chapter_start: float | None
+
+
+class SearchResponse(BaseModel):
+    query: str
+    total: int
+    results: list[SearchResult]
+
+
+class AskRequest(BaseModel):
+    question: str
+    top_k: int = 5
+    run_ids: list[str] | None = None
+
+
+class AskResponse(BaseModel):
+    question: str
+    answer: str
+    sources: list[SearchResult]

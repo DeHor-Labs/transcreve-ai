@@ -136,6 +136,75 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # ------------------------------------------------------------------
+    # index
+    # ------------------------------------------------------------------
+    index_parser = subparsers.add_parser(
+        "index",
+        help="Indexa runs para busca semantica (RAG)",
+    )
+    index_parser.add_argument(
+        "run_id",
+        nargs="?",
+        default=None,
+        help="ID do run a indexar (omita para usar --all)",
+    )
+    index_parser.add_argument(
+        "--all",
+        dest="index_all",
+        action="store_true",
+        default=False,
+        help="Indexa todos os runs ainda nao indexados",
+    )
+    index_parser.add_argument(
+        "--provider",
+        default="",
+        metavar="NOME",
+        help="Provider de embed: openai, local ou gemini (default: VIDEO_KB_PROVIDER ou openai)",
+    )
+    index_parser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Reindexar mesmo que o run ja tenha embeddings",
+    )
+
+    # ------------------------------------------------------------------
+    # ask
+    # ------------------------------------------------------------------
+    ask_parser = subparsers.add_parser(
+        "ask",
+        help="Faz uma pergunta sobre os videos indexados (RAG)",
+    )
+    ask_parser.add_argument("question", help="Pergunta a ser respondida")
+    ask_parser.add_argument(
+        "--top-k",
+        type=int,
+        default=5,
+        metavar="N",
+        help="Numero de trechos de contexto a recuperar (default: 5)",
+    )
+    ask_parser.add_argument(
+        "--provider",
+        default="",
+        metavar="NOME",
+        help="Provider de embed e sintese (default: VIDEO_KB_PROVIDER ou openai)",
+    )
+    ask_parser.add_argument(
+        "--run-id",
+        dest="run_ids",
+        action="append",
+        default=None,
+        metavar="ID",
+        help="Restringir busca a este run (repetivel)",
+    )
+    ask_parser.add_argument(
+        "--search-only",
+        action="store_true",
+        default=False,
+        help="Exibe apenas os trechos encontrados, sem chamar o LLM",
+    )
+
+    # ------------------------------------------------------------------
     # serve
     # ------------------------------------------------------------------
     serve_parser = subparsers.add_parser("serve", help="Inicia o servidor web TranscreveAI")
@@ -169,6 +238,10 @@ def main() -> None:
         _cmd_analyze(args)
     elif args.command == "serve":
         _cmd_serve(args)
+    elif args.command == "index":
+        _cmd_index(args)
+    elif args.command == "ask":
+        _cmd_ask(args)
     elif args.command == "runs":
         if args.runs_command == "list":
             _cmd_runs_list(args)
@@ -337,3 +410,227 @@ def _cmd_runs_rm(args: argparse.Namespace) -> None:
             print(f"Diretorio '{output_dir}' deletado.")
         else:
             print(f"Aviso: diretorio '{output_dir}' nao encontrado no disco.")
+
+
+# ---------------------------------------------------------------------------
+# index
+# ---------------------------------------------------------------------------
+
+
+def _cmd_index(args: argparse.Namespace) -> None:
+    # Import lazy do modulo embeddings - nao exige numpy no import do pacote
+    try:
+        from .embeddings import EmbedNotSupportedError, index_run
+        from .embeddings.store import DimMismatchError
+    except ImportError as exc:
+        print(f"Dependencias de indexacao ausentes: {exc}", file=sys.stderr)
+        print("Instale com: pip install 'transcreve-ai[rag]'", file=sys.stderr)
+        sys.exit(1)
+
+    if not args.run_id and not args.index_all:
+        print(
+            "Erro: informe um run_id ou use --all para indexar todos os runs.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    from .providers import CapabilityNotSupported, load_provider, resolve_provider_name
+
+    provider_name = resolve_provider_name(args.provider or None)
+    try:
+        provider = load_provider(provider_name)
+    except Exception as exc:
+        print(f"Erro ao carregar provider '{provider_name}': {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if "embed" not in provider.capabilities():
+        try:
+            raise EmbedNotSupportedError(provider_name)
+        except EmbedNotSupportedError as exc:
+            print(f"Erro: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+    db_path = resolve_index_path(getattr(args, "index_db", None))
+
+    # Determina modelo de embed do provider
+    model_name = _get_embed_model(provider, provider_name)
+
+    if args.run_id:
+        run_ids_to_index = [args.run_id]
+    else:
+        with RunIndex(db_path) as idx:
+            runs = idx.list_runs(limit=9999)
+        if not runs:
+            print("Nenhum run encontrado. Execute 'transcreveai analyze' primeiro.")
+            return
+        run_ids_to_index = [r["id"] for r in runs]
+
+    indexed = 0
+    skipped = 0
+
+    for run_id in run_ids_to_index:
+        with RunIndex(db_path) as idx:
+            run = idx.get_run(run_id)
+
+        if run is None:
+            print(f"Run '{run_id}' nao encontrado no indice.", file=sys.stderr)
+            continue
+
+        analysis_path = run.get("analysis_path") or ""
+        if not analysis_path or not Path(analysis_path).exists():
+            print(f"  Pulando '{run_id}': analysis.json nao encontrado em '{analysis_path}'.")
+            skipped += 1
+            continue
+
+        # Verifica se ja indexado (sem --force)
+        from .embeddings.store import EmbeddingStore
+
+        with EmbeddingStore(db_path) as store:
+            already = store.has_indexed(run_id)
+
+        if already and not args.force:
+            title = run.get("title") or run_id
+            print(f"  Run '{title}' ({run_id}) ja indexado. Use --force para reindexar.")
+            skipped += 1
+            continue
+
+        import json as _json
+
+        analysis = _json.loads(Path(analysis_path).read_text(encoding="utf-8"))
+        title = run.get("title") or run_id
+
+        try:
+            count = index_run(
+                run_id=run_id,
+                analysis=analysis,
+                provider=provider,
+                provider_name=provider_name,
+                model_name=model_name,
+                db_path=db_path,
+                force=args.force,
+            )
+        except DimMismatchError as exc:
+            print(f"  Erro: {exc}", file=sys.stderr)
+            skipped += 1
+            continue
+        except CapabilityNotSupported as exc:
+            print(f"  Erro: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        if count == 0 and not args.force:
+            print(f"  Run '{title}' ({run_id}) ja indexado. Use --force para reindexar.")
+            skipped += 1
+        else:
+            print(f"  Indexando '{title}'... {count} chunks gerados.")
+            indexed += 1
+
+    print(f"\nConcluido: {indexed} indexado(s), {skipped} pulado(s).")
+
+
+# ---------------------------------------------------------------------------
+# ask
+# ---------------------------------------------------------------------------
+
+
+def _cmd_ask(args: argparse.Namespace) -> None:
+    try:
+        from .embeddings import EmbedNotSupportedError, search
+        from .embeddings.rag import ask
+    except ImportError as exc:
+        print(f"Dependencias de busca ausentes: {exc}", file=sys.stderr)
+        print("Instale com: pip install 'transcreve-ai[rag]'", file=sys.stderr)
+        sys.exit(1)
+
+    from .providers import load_provider, resolve_provider_name
+
+    provider_name = resolve_provider_name(args.provider or None)
+    try:
+        provider = load_provider(provider_name)
+    except Exception as exc:
+        print(f"Erro ao carregar provider '{provider_name}': {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if "embed" not in provider.capabilities():
+        try:
+            raise EmbedNotSupportedError(provider_name)
+        except EmbedNotSupportedError as exc:
+            print(f"Erro: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+    db_path = resolve_index_path(getattr(args, "index_db", None))
+    run_ids = args.run_ids or None
+
+    # Verifica se ha embeddings no banco
+    from .embeddings.store import EmbeddingStore
+
+    with EmbeddingStore(db_path) as store:
+        conn = store._connect()
+        row = conn.execute("SELECT 1 FROM embeddings LIMIT 1").fetchone()
+        has_any = row is not None
+
+    if not has_any:
+        print("Nenhum conteudo indexado. Execute 'transcreveai index --all' primeiro.")
+        sys.exit(0)
+
+    if args.search_only:
+        hits = search(
+            query=args.question,
+            provider=provider,
+            db_path=db_path,
+            top_k=args.top_k,
+            run_ids=run_ids,
+        )
+        if not hits:
+            print("Nenhum trecho encontrado.")
+            return
+        print(f'Top {len(hits)} trechos para: "{args.question}"\n')
+        for i, hit in enumerate(hits, start=1):
+            tipo = hit.chunk_type
+            titulo = hit.title or hit.run_id
+            score_pct = f"{hit.score * 100:.1f}%"
+            print(f"[{i}] {titulo} ({tipo}) - score: {score_pct}")
+            print(f"    {hit.excerpt[:120]}...")
+            if hit.chapter_start is not None:
+                mins = int(hit.chapter_start // 60)
+                secs = int(hit.chapter_start % 60)
+                print(f"    Capitulo em: {mins}:{secs:02d}")
+            print()
+        return
+
+    result = ask(
+        question=args.question,
+        embed_provider=provider,
+        synth_provider=provider,
+        db_path=db_path,
+        top_k=args.top_k,
+        run_ids=run_ids,
+    )
+
+    print(f"Pergunta: {result.question}\n")
+    print(f"Resposta:\n{result.answer}\n")
+
+    if result.sources:
+        print("Fontes:")
+        for i, hit in enumerate(result.sources, start=1):
+            titulo = hit.title or hit.run_id
+            score_pct = f"{hit.score * 100:.1f}%"
+            print(f"  [{i}] {titulo} ({hit.run_id}) - score: {score_pct}")
+
+
+# ---------------------------------------------------------------------------
+# Helper: detecta modelo de embed do provider
+# ---------------------------------------------------------------------------
+
+
+def _get_embed_model(provider: object, provider_name: str) -> str:
+    """Retorna o nome do modelo de embedding do provider."""
+    for attr in ("_embed_model", "_embedding_model", "embed_model"):
+        val = getattr(provider, attr, None)
+        if val and isinstance(val, str):
+            return val
+    defaults = {
+        "openai": "text-embedding-3-small",
+        "local": "all-MiniLM-L6-v2",
+        "gemini": "text-embedding-004",
+    }
+    return defaults.get(provider_name, "unknown")

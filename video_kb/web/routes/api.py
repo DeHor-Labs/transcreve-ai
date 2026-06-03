@@ -13,12 +13,17 @@ from fastapi.responses import JSONResponse
 
 from ..jobs import ActiveJob, JobStore
 from ..schemas import (
+    AskRequest,
+    AskResponse,
     DossierResponse,
     HealthResponse,
     JobDetail,
     JobListResponse,
     JobSummary,
     ProgressEvent,
+    SearchRequest,
+    SearchResponse,
+    SearchResult,
 )
 
 router = APIRouter()
@@ -469,6 +474,195 @@ def get_dossier(
         job_id=job_id,
         markdown=markdown_text,
         analysis=analysis_data,
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/search
+# ---------------------------------------------------------------------------
+
+
+@router.post("/search", response_model=SearchResponse)
+async def search_knowledge(
+    body: SearchRequest,
+    request: Request,
+) -> SearchResponse | JSONResponse:
+    """Busca semantica por trechos indexados. Nao chama LLM."""
+    if not body.query or not body.query.strip():
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "validation",
+                "message": "Campo 'query' obrigatorio e nao pode ser vazio.",
+            },
+        )
+
+    try:
+        from ...embeddings import EmbedNotSupportedError
+        from ...embeddings import search as rag_search
+        from ...index import resolve_index_path
+        from ...providers import load_provider, resolve_provider_name
+    except ImportError as exc:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "rag_unavailable",
+                "message": f"Modulo RAG nao disponivel: {exc}. Instale 'transcreve-ai[rag]'.",
+            },
+        )
+
+    provider_name = resolve_provider_name(None)
+    try:
+        provider = load_provider(provider_name)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "provider_error", "message": str(exc)},
+        )
+
+    if "embed" not in provider.capabilities():
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "capability_not_supported",
+                "message": (
+                    f"Provider '{provider_name}' nao suporta embeddings. "
+                    "Use --provider openai, local ou gemini."
+                ),
+            },
+        )
+
+    db_path = resolve_index_path(request.app.state.index_db)
+
+    try:
+        hits = rag_search(
+            query=body.query.strip(),
+            provider=provider,
+            db_path=db_path,
+            top_k=body.top_k,
+            run_ids=body.run_ids,
+        )
+    except EmbedNotSupportedError as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "capability_not_supported", "message": str(exc)},
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content={"error": "search_error", "message": str(exc)},
+        )
+
+    results = [
+        SearchResult(
+            run_id=h.run_id,
+            title=h.title,
+            source_url=h.source_url,
+            chunk_type=h.chunk_type,
+            excerpt=h.excerpt,
+            score=h.score,
+            chapter_start=h.chapter_start,
+        )
+        for h in hits
+    ]
+
+    return SearchResponse(query=body.query, total=len(results), results=results)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/ask
+# ---------------------------------------------------------------------------
+
+
+@router.post("/ask", response_model=AskResponse)
+async def ask_knowledge(
+    body: AskRequest,
+    request: Request,
+) -> AskResponse | JSONResponse:
+    """RAG completo: busca trechos e gera resposta com LLM."""
+    if not body.question or not body.question.strip():
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "validation",
+                "message": "Campo 'question' obrigatorio e nao pode ser vazio.",
+            },
+        )
+
+    try:
+        from ...embeddings import EmbedNotSupportedError
+        from ...embeddings.rag import ask as rag_ask
+        from ...index import resolve_index_path
+        from ...providers import load_provider, resolve_provider_name
+    except ImportError as exc:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "rag_unavailable",
+                "message": f"Modulo RAG nao disponivel: {exc}. Instale 'transcreve-ai[rag]'.",
+            },
+        )
+
+    provider_name = resolve_provider_name(None)
+    try:
+        provider = load_provider(provider_name)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "provider_error", "message": str(exc)},
+        )
+
+    if "embed" not in provider.capabilities():
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "capability_not_supported",
+                "message": (
+                    f"Provider '{provider_name}' nao suporta embeddings. "
+                    "Use --provider openai, local ou gemini."
+                ),
+            },
+        )
+
+    db_path = resolve_index_path(request.app.state.index_db)
+
+    try:
+        result = rag_ask(
+            question=body.question.strip(),
+            embed_provider=provider,
+            synth_provider=provider,
+            db_path=db_path,
+            top_k=body.top_k,
+            run_ids=body.run_ids,
+        )
+    except EmbedNotSupportedError as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "capability_not_supported", "message": str(exc)},
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content={"error": "ask_error", "message": str(exc)},
+        )
+
+    sources = [
+        SearchResult(
+            run_id=h.run_id,
+            title=h.title,
+            source_url=h.source_url,
+            chunk_type=h.chunk_type,
+            excerpt=h.excerpt,
+            score=h.score,
+            chapter_start=h.chapter_start,
+        )
+        for h in result.sources
+    ]
+
+    return AskResponse(
+        question=result.question,
+        answer=result.answer,
+        sources=sources,
     )
 
 

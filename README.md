@@ -340,6 +340,72 @@ pip install transcreve-ai[anthropic]  # Anthropic: anthropic SDK
 | `ANTHROPIC_API_KEY` | Chave para o provider `anthropic` |
 | `VIDEO_KB_LOCAL_WHISPER_MODEL` | Modelo faster-whisper para o provider `local` (padrao: `base`) |
 
+## Busca semantica (RAG)
+
+Apos analisar videos, voce pode indexar o conteudo e fazer perguntas em linguagem natural. O sistema divide cada dossie em chunks, gera embeddings e persiste tudo em SQLite local. A busca e feita por similaridade cosine.
+
+### Instalacao
+
+```bash
+pip install 'transcreve-ai[rag]'
+```
+
+Para usar o provider offline `local` (sem chamadas de rede):
+
+```bash
+pip install 'transcreve-ai[rag]' 'transcreve-ai[local]'
+```
+
+### Indexar videos
+
+```bash
+# Indexar um run especifico
+transcreveai index <run_id>
+
+# Indexar todos os runs ainda nao indexados
+transcreveai index --all
+
+# Forcar reindexacao com provider diferente
+transcreveai index --all --provider gemini --force
+```
+
+### Buscar e perguntar
+
+```bash
+# Busca semantica (retorna trechos, sem LLM)
+transcreveai ask "ferramentas mostradas no video" --search-only
+
+# RAG completo: recupera trechos e gera resposta
+transcreveai ask "o que foi dito sobre autenticacao?"
+
+# Limitar busca a runs especificos
+transcreveai ask "qual e o fluxo de cadastro?" --run-ids <run_id1> <run_id2>
+
+# Usar provider offline (sem custo de API)
+transcreveai ask "resumo dos capitulos" --provider local
+```
+
+### Embeddings locais (offline) vs. providers externos
+
+| Provider | Modelo de embedding | Offline | Requer |
+|---|---|:---:|---|
+| `openai` | `text-embedding-3-small` | Nao | `OPENAI_API_KEY` |
+| `local` | `all-MiniLM-L6-v2` (sentence-transformers) | Sim | `transcreve-ai[local]` |
+| `gemini` | `text-embedding-004` | Nao | `GEMINI_API_KEY` |
+
+O provider `local` usa `sentence-transformers` com o modelo `all-MiniLM-L6-v2`. Nao faz chamadas de rede para gerar embeddings - util para uso offline, privacidade ou controle de custo.
+
+### Busca pela interface web
+
+Na interface web (`transcreveai serve`), acesse `/search` para usar a busca semantica no navegador. A pagina oferece dois modos:
+
+- Busca de trechos: retorna os chunks mais similares com score, tipo e trecho do texto
+- Gerar resposta com IA: chama o RAG completo e exibe a resposta sintetizada com as fontes
+
+A busca web usa o provider configurado em `VIDEO_KB_PROVIDER` (ou `openai` como fallback).
+
+---
+
 ## Architecture
 
 ```text
