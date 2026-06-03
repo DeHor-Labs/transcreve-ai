@@ -194,6 +194,51 @@ More selective AI vision:
 transcreveai analyze "https://youtu.be/..." --ai auto --max-frames 120 --visual-limit 16
 ```
 
+## Providers / Modelos
+
+TranscreveAI suporta multiplos providers de IA. Use `--provider` para escolher:
+
+```bash
+transcreveai analyze "https://youtu.be/..." --provider gemini --language pt
+```
+
+| Provider | Transcricao | Visao | Sintese | Embeddings | Requer |
+|---|:---:|:---:|:---:|:---:|---|
+| `openai` (padrao) | sim | sim | sim | sim | `OPENAI_API_KEY` |
+| `local` | sim | nao | sim | sim | nenhuma (offline/gratuito) |
+| `gemini` | sim | sim | sim | sim | `GEMINI_API_KEY` |
+| `anthropic` | condicional | sim | sim | nao | `ANTHROPIC_API_KEY` |
+
+O provider tambem pode ser definido por variavel de ambiente. Precedencia: `--provider` > `VIDEO_KB_PROVIDER` > `openai`.
+
+### Modo offline/gratuito
+
+```bash
+pip install transcreve-ai[local]
+transcreveai analyze ./video.mp4 --provider local --ai auto
+```
+
+Usa `faster-whisper` para transcricao e `sentence-transformers` para embeddings, sem chamadas de rede.
+O modelo Whisper pode ser ajustado com `VIDEO_KB_LOCAL_WHISPER_MODEL` (padrao: `base`).
+
+### Extras de instalacao
+
+```bash
+pip install transcreve-ai[local]      # offline/gratuito: faster-whisper + sentence-transformers
+pip install transcreve-ai[gemini]     # Google Gemini: google-generativeai
+pip install transcreve-ai[anthropic]  # Anthropic: anthropic SDK
+```
+
+### Variaveis de ambiente relevantes
+
+| Variavel | Descricao |
+|---|---|
+| `VIDEO_KB_PROVIDER` | Provider padrao quando `--provider` nao e passado |
+| `OPENAI_API_KEY` | Chave para o provider `openai` |
+| `GEMINI_API_KEY` | Chave para o provider `gemini` (aceita `GOOGLE_API_KEY` como fallback) |
+| `ANTHROPIC_API_KEY` | Chave para o provider `anthropic` |
+| `VIDEO_KB_LOCAL_WHISPER_MODEL` | Modelo faster-whisper para o provider `local` (padrao: `base`) |
+
 ## Architecture
 
 ```text
@@ -203,9 +248,9 @@ URL or file
   -> ffmpeg audio extraction
   -> ffmpeg frame sampling
   -> tesseract OCR
-  -> optional OpenAI transcription
-  -> optional OpenAI visual frame notes
-  -> optional OpenAI synthesis
+  -> optional AI transcription  (provider escolhido)
+  -> optional AI visual frame notes  (provider escolhido)
+  -> optional AI synthesis  (provider escolhido)
   -> analysis.json + knowledge.md
 ```
 

@@ -5,28 +5,25 @@ import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 
 class CommandError(RuntimeError):
-    def __init__(self, command: List[str], returncode: int, stderr: str):
+    def __init__(self, command: list[str], returncode: int, stderr: str):
         self.command = command
         self.returncode = returncode
         self.stderr = stderr
-        super().__init__(
-            "Command failed (%s): %s" % (returncode, " ".join(command))
-        )
+        super().__init__("Command failed ({}): {}".format(returncode, " ".join(command)))
 
 
-def run_command(command: List[str], cwd: Optional[Path] = None) -> subprocess.CompletedProcess:
+def run_command(command: list[str], cwd: Optional[Path] = None) -> subprocess.CompletedProcess:
     proc = subprocess.run(
         command,
         cwd=str(cwd) if cwd else None,
         text=True,
         encoding="utf-8",
         errors="replace",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
     )
     if proc.returncode != 0:
         raise CommandError(command, proc.returncode, proc.stderr.strip())
@@ -61,8 +58,8 @@ def format_timestamp(seconds: float) -> str:
     minutes = (whole % 3600) // 60
     secs = whole % 60
     if hours:
-        return "%d:%02d:%02d" % (hours, minutes, secs)
-    return "%02d:%02d" % (minutes, secs)
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
 
 
 def compact_text(text: str, limit: int = 12000) -> str:
@@ -73,7 +70,7 @@ def compact_text(text: str, limit: int = 12000) -> str:
     return text[:half].rstrip() + "\n\n...[truncated]...\n\n" + text[-half:].lstrip()
 
 
-def write_json(path: Path, data: Dict[str, Any]) -> None:
+def write_json(path: Path, data: dict[str, Any]) -> None:
     path.write_text(
         json.dumps(data, ensure_ascii=False, indent=2),
         encoding="utf-8",

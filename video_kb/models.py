@@ -1,5 +1,5 @@
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -13,8 +13,8 @@ class SourceMetadata:
     duration: float = 0.0
     upload_date: str = ""
     description: str = ""
-    tags: List[str] = field(default_factory=list)
-    categories: List[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
+    categories: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -35,13 +35,13 @@ class FrameObservation:
 @dataclass
 class KnowledgeSynthesis:
     summary: str = ""
-    chapters: List[Dict[str, Any]] = field(default_factory=list)
-    entities: List[str] = field(default_factory=list)
-    tools_or_products: List[str] = field(default_factory=list)
-    claims: List[str] = field(default_factory=list)
-    action_items: List[str] = field(default_factory=list)
-    questions: List[str] = field(default_factory=list)
-    raw: Dict[str, Any] = field(default_factory=dict)
+    chapters: list[dict[str, Any]] = field(default_factory=list)
+    entities: list[str] = field(default_factory=list)
+    tools_or_products: list[str] = field(default_factory=list)
+    claims: list[str] = field(default_factory=list)
+    action_items: list[str] = field(default_factory=list)
+    questions: list[str] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -54,10 +54,10 @@ class AnalysisResult:
     audio_path: str
     metadata: SourceMetadata
     transcript_text: str = ""
-    transcript_segments: List[TranscriptSegment] = field(default_factory=list)
-    frames: List[FrameObservation] = field(default_factory=list)
+    transcript_segments: list[TranscriptSegment] = field(default_factory=list)
+    frames: list[FrameObservation] = field(default_factory=list)
     synthesis: KnowledgeSynthesis = field(default_factory=KnowledgeSynthesis)
-    warnings: List[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)

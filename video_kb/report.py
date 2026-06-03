@@ -1,5 +1,5 @@
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, List
 
 from .models import AnalysisResult, FrameObservation, TranscriptSegment
 from .utils import compact_text, format_timestamp
@@ -7,24 +7,24 @@ from .utils import compact_text, format_timestamp
 
 def render_markdown(result: AnalysisResult) -> str:
     metadata = result.metadata
-    lines: List[str] = []
+    lines: list[str] = []
     lines.append("# %s" % (metadata.title or "Video analysis"))
     lines.append("")
-    lines.append("- Fonte: `%s`" % result.source)
+    lines.append(f"- Fonte: `{result.source}`")
     if metadata.webpage_url:
-        lines.append("- URL: %s" % metadata.webpage_url)
+        lines.append(f"- URL: {metadata.webpage_url}")
     if metadata.uploader or metadata.channel:
         lines.append("- Autor/canal: %s" % (metadata.uploader or metadata.channel))
     if metadata.duration:
-        lines.append("- Duracao: %s" % format_timestamp(metadata.duration))
+        lines.append(f"- Duracao: {format_timestamp(metadata.duration)}")
     if metadata.upload_date:
-        lines.append("- Data de upload: %s" % metadata.upload_date)
-    lines.append("- Run: `%s`" % result.run_id)
+        lines.append(f"- Data de upload: {metadata.upload_date}")
+    lines.append(f"- Run: `{result.run_id}`")
     lines.append("")
 
     if result.warnings:
         lines.append("## Avisos")
-        lines.extend("- %s" % warning for warning in result.warnings)
+        lines.extend(f"- {warning}" for warning in result.warnings)
         lines.append("")
 
     if result.synthesis.summary:
@@ -53,7 +53,7 @@ def render_markdown(result: AnalysisResult) -> str:
         lines.append("")
 
     ocr_blocks = [
-        "[%s] %s" % (format_timestamp(frame.timestamp), frame.ocr_text)
+        f"[{format_timestamp(frame.timestamp)}] {frame.ocr_text}"
         for frame in result.frames
         if frame.ocr_text
     ]
@@ -61,9 +61,9 @@ def render_markdown(result: AnalysisResult) -> str:
 
     lines.append("## Arquivos")
     lines.append("- JSON estruturado: `analysis.json`")
-    lines.append("- Video: `%s`" % Path(result.media_path).name)
+    lines.append(f"- Video: `{Path(result.media_path).name}`")
     if result.audio_path:
-        lines.append("- Audio: `%s`" % Path(result.audio_path).name)
+        lines.append(f"- Audio: `{Path(result.audio_path).name}`")
     lines.append("- Frames: `frames/`")
     lines.append("")
 
@@ -74,16 +74,16 @@ def write_markdown(result: AnalysisResult, path: Path) -> None:
     path.write_text(render_markdown(result), encoding="utf-8")
 
 
-def _append_list(lines: List[str], title: str, items: Iterable) -> None:
+def _append_list(lines: list[str], title: str, items: Iterable) -> None:
     clean_items = [str(item).strip() for item in items if str(item).strip()]
     if not clean_items:
         return
-    lines.append("## %s" % title)
-    lines.extend("- %s" % item for item in clean_items)
+    lines.append(f"## {title}")
+    lines.extend(f"- {item}" for item in clean_items)
     lines.append("")
 
 
-def _render_chapters(chapters: List[dict]) -> List[str]:
+def _render_chapters(chapters: list[dict]) -> list[str]:
     rendered = []
     for chapter in chapters:
         start = chapter.get("start", "")
@@ -91,41 +91,43 @@ def _render_chapters(chapters: List[dict]) -> List[str]:
         notes = chapter.get("notes", "")
         if isinstance(start, (int, float)):
             start = format_timestamp(float(start))
-        text = "%s - %s" % (start, title) if start else str(title)
+        text = f"{start} - {title}" if start else str(title)
         if notes:
-            text += ": %s" % notes
+            text += f": {notes}"
         rendered.append(text)
     return rendered
 
 
 def _render_timeline(
-    frames: List[FrameObservation],
-    segments: List[TranscriptSegment],
-) -> List[str]:
-    lines: List[str] = []
+    frames: list[FrameObservation],
+    segments: list[TranscriptSegment],
+) -> list[str]:
+    lines: list[str] = []
     for frame in frames:
         parts = []
         speech = _speech_near(segments, frame.timestamp)
         if speech:
-            parts.append("Fala: %s" % compact_text(speech, 500))
+            parts.append(f"Fala: {compact_text(speech, 500)}")
         if frame.ocr_text:
-            parts.append("Tela/OCR: %s" % compact_text(frame.ocr_text, 500))
+            parts.append(f"Tela/OCR: {compact_text(frame.ocr_text, 500)}")
         if frame.visual_note:
-            parts.append("Visual: %s" % compact_text(frame.visual_note, 700))
+            parts.append(f"Visual: {compact_text(frame.visual_note, 700)}")
         rel_image = Path(frame.image_path)
-        lines.append("### %s" % format_timestamp(frame.timestamp))
-        lines.append("![frame](%s)" % rel_image.as_posix())
+        lines.append(f"### {format_timestamp(frame.timestamp)}")
+        lines.append(f"![frame]({rel_image.as_posix()})")
         if not parts:
             parts.append("Frame capturado; sem OCR, fala alinhada ou nota visual.")
-        lines.extend("- %s" % part for part in parts)
+        lines.extend(f"- {part}" for part in parts)
         lines.append("")
     return lines
 
 
-def _speech_near(segments: List[TranscriptSegment], timestamp: float, window: float = 6.0) -> str:
+def _speech_near(segments: list[TranscriptSegment], timestamp: float, window: float = 6.0) -> str:
     selected = [
         segment.text.strip()
         for segment in segments
-        if segment.text and segment.start <= timestamp + window and segment.end >= timestamp - window
+        if segment.text
+        and segment.start <= timestamp + window
+        and segment.end >= timestamp - window
     ]
     return " ".join(selected)

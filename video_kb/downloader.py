@@ -1,6 +1,6 @@
 import shutil
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 from urllib.parse import urlparse
 
 from .models import SourceMetadata
@@ -45,7 +45,7 @@ def fetch_media(
     cookies_browser: Optional[str] = None,
     cookies: Optional[str] = None,
     video_format: str = "bv*+ba/b",
-) -> Tuple[Path, SourceMetadata]:
+) -> tuple[Path, SourceMetadata]:
     ensure_dir(out_dir)
     if not is_url(source):
         source_path = Path(source).expanduser().resolve()

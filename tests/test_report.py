@@ -7,9 +7,9 @@ from video_kb.models import (
     SourceMetadata,
     TranscriptSegment,
 )
+from video_kb.providers.base import normalize_items
 from video_kb.report import render_markdown
 from video_kb.utils import format_timestamp, slugify
-from video_kb.ai import _normalize_items
 
 
 class ReportTests(unittest.TestCase):
@@ -27,9 +27,7 @@ class ReportTests(unittest.TestCase):
                 duration=62,
             ),
             transcript_text="fala completa",
-            transcript_segments=[
-                TranscriptSegment(start=0, end=4, text="fala perto do frame")
-            ],
+            transcript_segments=[TranscriptSegment(start=0, end=4, text="fala perto do frame")],
             frames=[
                 FrameObservation(
                     timestamp=2,
@@ -78,7 +76,7 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Frame capturado", markdown)
 
     def test_normalize_items_formats_structured_ai_lists(self):
-        items = _normalize_items(
+        items = normalize_items(
             [
                 {"name": "Flow Labs", "type": "tool"},
                 {"title": "Open question", "description": "Needs review"},
