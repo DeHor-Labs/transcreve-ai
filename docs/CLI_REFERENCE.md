@@ -1,48 +1,76 @@
 # CLI Reference
 
+## Comandos disponiveis
+
+| Comando | Descricao |
+|---|---|
+| `transcreveai analyze SOURCE` | Analisa um link ou arquivo de video |
+| `transcreveai runs list` | Lista o historico de runs |
+| `transcreveai runs show RUN_ID` | Exibe detalhes de um run |
+| `transcreveai runs rm RUN_ID` | Remove um run do indice |
+
+---
+
+## Flag global
+
+```bash
+transcreveai [--index-db PATH] COMANDO
+```
+
+| Flag | Descricao | Default |
+|---|---|---|
+| `--index-db PATH` | Path do banco SQLite de indice. Sobreescreve `VIDEO_KB_INDEX_DB`. | `~/.transcreveai/index.db` |
+
+---
+
 ## `transcreveai analyze`
 
-Analyze a URL or local video file.
+Analisa um link ou arquivo de video e grava um dossie multimodal.
 
 ```bash
-transcreveai analyze SOURCE [options]
+transcreveai analyze SOURCE [opcoes]
 ```
 
-## Arguments
+### Argumento
 
-- `SOURCE`: URL or local video path.
+- `SOURCE`: URL ou caminho local do video.
 
-## Options
+### Opcoes
 
-- `--out`: output directory. Default: `outputs`.
-- `--frame-interval`: seconds between candidate frames. Default: `5`.
-- `--max-frames`: maximum local frames. `0` means no limit. Default: `80`.
-- `--visual-limit`: maximum frames sent for AI visual analysis. Default: `30`.
-- `--ai`: `auto`, `off` or `full`. Default: `auto`.
-- `--vision-model`: model for visual notes and synthesis.
-- `--transcribe-model`: model for transcription.
-- `--language`: audio language hint, for example `pt` or `en`.
-- `--tesseract-lang`: OCR language string. Default: `por+eng`.
-- `--cookies-browser`: browser cookies for `yt-dlp`, for example `chrome`.
-- `--cookies`: path to a `cookies.txt` file.
-- `--format`: `yt-dlp` format selector.
-- `--provider`: AI provider to use. Accepted values: `openai` (default), `local`, `gemini`, `anthropic`, or any provider registered via entry_points. Can also be set via the `VIDEO_KB_PROVIDER` environment variable. Precedence: `--provider` > `VIDEO_KB_PROVIDER` > `openai`.
+| Flag | Descricao | Default |
+|---|---|---|
+| `--out PATH` | Diretorio de saida | `outputs` |
+| `--frame-interval N` | Intervalo entre frames em segundos | `5.0` |
+| `--max-frames N` | Maximo de frames locais (`0` = sem limite) | `80` |
+| `--visual-limit N` | Maximo de frames enviados para visao por IA | `30` |
+| `--ai {auto,off,full}` | Modo de uso da IA. `auto` usa IA se a chave do provider estiver definida | `auto` |
+| `--vision-model MODEL` | Modelo de visao/sintese | - |
+| `--transcribe-model MODEL` | Modelo de transcricao | - |
+| `--language LANG` | Idioma do audio, ex: `pt`, `en` | - |
+| `--tesseract-lang LANG` | String de idioma OCR | `por+eng` |
+| `--cookies-browser BROWSER` | Browser para cookies do yt-dlp, ex: `chrome` | - |
+| `--cookies FILE` | Arquivo `cookies.txt` para yt-dlp | - |
+| `--format SELECTOR` | Seletor de formato yt-dlp | `bv*+ba/b` |
+| `--provider NOME` | Provider de IA: `openai`, `local`, `gemini`, `anthropic` ou externo via entry_points. Sobreescreve `VIDEO_KB_PROVIDER`. | `openai` |
+| `--storage NOME` | Backend de armazenamento: `filesystem`, `obsidian`, `notion`, `supabase`, `s3`. Sobreescreve `VIDEO_KB_STORAGE`. | `filesystem` |
+| `--force` | Ignora dedupe: reprocessa mesmo que o `source_hash` ja exista no indice | `false` |
 
-## Examples
+### Comportamento de dedupe
+
+Ao analisar uma fonte, o pipeline calcula um SHA-256 da URL ou do arquivo. Se um run com o mesmo hash ja existir no indice com `status != "failed"`, o pipeline exibe uma mensagem e encerra sem reprocessar. Use `--force` para sobrescrever.
+
+### Exemplos
 
 ```bash
+# Analise basica com IA automatica
 transcreveai analyze "https://www.instagram.com/reel/..." --ai auto --language pt
-```
 
-```bash
+# Arquivo local sem IA
 transcreveai analyze ./video.mp4 --ai off --frame-interval 3 --max-frames 60
-```
 
-```bash
-transcreveai analyze "https://youtu.be/..." --cookies-browser chrome --visual-limit 12
-```
+# Com cookies de browser para plataformas que exigem login
+transcreveai analyze "https://www.instagram.com/reel/..." --cookies-browser chrome --ai auto
 
-```bash
 # Provider Google Gemini
 transcreveai analyze "https://youtu.be/..." --provider gemini --language pt
 
@@ -54,4 +82,177 @@ transcreveai analyze "https://youtu.be/..." --provider anthropic --ai auto
 
 # Definir provider via variavel de ambiente
 VIDEO_KB_PROVIDER=gemini transcreveai analyze "https://youtu.be/..." --ai auto
+
+# Exportar para vault do Obsidian (requer pip install transcreve-ai[obsidian])
+VIDEO_KB_OBSIDIAN_VAULT=~/ObsidianVault transcreveai analyze "https://youtu.be/..." --storage obsidian
+
+# Exportar para Notion (requer pip install transcreve-ai[notion])
+transcreveai analyze "https://youtu.be/..." --storage notion
+
+# Upload para S3 (requer pip install transcreve-ai[s3])
+transcreveai analyze "https://youtu.be/..." --storage s3
+
+# Forcando reprocessamento de source ja indexada
+transcreveai analyze "https://youtu.be/..." --force
+
+# Banco de indice customizado
+transcreveai --index-db ~/projetos/meu.db analyze "https://youtu.be/..."
 ```
+
+---
+
+## `transcreveai runs list`
+
+Lista runs registrados no indice, ordenados do mais recente para o mais antigo.
+
+```bash
+transcreveai runs list [opcoes]
+```
+
+### Opcoes
+
+| Flag | Descricao | Default |
+|---|---|---|
+| `--limit N` | Numero maximo de entradas retornadas | `20` |
+| `--json` | Saida em JSON array (integravel com `jq`, scripts, etc.) | `false` |
+| `--out PATH` | Filtrar apenas runs com `output_dir` igual ao valor informado | - |
+
+### Saida padrao (tabela)
+
+```
+ID                                       STATUS     TITULO                               CRIADO EM
+----------------------------------------------------------------------------------------------------
+20260601T060803Z-youtu-be-abc123         completed  Como usar TranscreveAI               2026-06-01T06:08:03+00:00
+20260531T120000Z-video-mp4               completed  Aula de Python                        2026-05-31T12:00:00+00:00
+```
+
+### Saida JSON (`--json`)
+
+```json
+[
+  {
+    "id": "20260601T060803Z-youtu-be-abc123",
+    "source": "https://youtu.be/abc123",
+    "source_hash": "e3b0c44...",
+    "title": "Como usar TranscreveAI",
+    "provider": "openai",
+    "ai_mode": "auto",
+    "status": "completed",
+    "created_at": "2026-06-01T06:08:03+00:00",
+    "finished_at": "2026-06-01T06:12:47+00:00",
+    "output_dir": "outputs/20260601T060803Z-youtu-be-abc123",
+    "analysis_path": "outputs/20260601T060803Z-youtu-be-abc123/analysis.json",
+    "markdown_path": "outputs/20260601T060803Z-youtu-be-abc123/knowledge.md",
+    "duration_seconds": 312.0,
+    "warnings_count": 0,
+    "storage_backend": "filesystem"
+  }
+]
+```
+
+### Exemplos
+
+```bash
+transcreveai runs list
+transcreveai runs list --limit 50
+transcreveai runs list --json
+transcreveai runs list --json | jq '.[].title'
+transcreveai runs list --out outputs/20260601T060803Z-youtu-be-abc123
+```
+
+---
+
+## `transcreveai runs show`
+
+Exibe todos os campos de um run especifico.
+
+```bash
+transcreveai runs show RUN_ID [opcoes]
+```
+
+### Argumento
+
+- `RUN_ID`: ID exato do run (coluna `id` no indice).
+
+### Opcoes
+
+| Flag | Descricao | Default |
+|---|---|---|
+| `--json` | Saida em JSON bruto | `false` |
+
+### Exemplos
+
+```bash
+transcreveai runs show 20260601T060803Z-youtu-be-abc123
+transcreveai runs show 20260601T060803Z-youtu-be-abc123 --json
+```
+
+---
+
+## `transcreveai runs rm`
+
+Remove um run do indice SQLite. Opcionalmente apaga tambem o diretorio de saida do disco.
+
+```bash
+transcreveai runs rm RUN_ID [opcoes]
+```
+
+### Argumento
+
+- `RUN_ID`: ID exato do run a remover.
+
+### Opcoes
+
+| Flag | Descricao | Default |
+|---|---|---|
+| `--purge` | Tambem deleta o `output_dir` do filesystem (`rm -rf`) | `false` |
+| `--force` | Nao pede confirmacao interativa | `false` |
+
+Por padrao, o comando pede confirmacao antes de remover. Use `--force` para scripts e automacoes.
+
+### Exemplos
+
+```bash
+# Remove do indice (pede confirmacao)
+transcreveai runs rm 20260601T060803Z-youtu-be-abc123
+
+# Remove do indice sem confirmacao
+transcreveai runs rm 20260601T060803Z-youtu-be-abc123 --force
+
+# Remove do indice e apaga o diretorio de saida do disco
+transcreveai runs rm 20260601T060803Z-youtu-be-abc123 --purge
+
+# Remove tudo sem confirmacao (uso em scripts)
+transcreveai runs rm 20260601T060803Z-youtu-be-abc123 --purge --force
+```
+
+---
+
+## Variaveis de ambiente
+
+### Providers de IA
+
+| Variavel | Descricao |
+|---|---|
+| `VIDEO_KB_PROVIDER` | Provider padrao quando `--provider` nao e passado |
+| `OPENAI_API_KEY` | Chave para o provider `openai` |
+| `GEMINI_API_KEY` | Chave para o provider `gemini` (aceita `GOOGLE_API_KEY` como fallback) |
+| `ANTHROPIC_API_KEY` | Chave para o provider `anthropic` |
+| `VIDEO_KB_LOCAL_WHISPER_MODEL` | Modelo faster-whisper para o provider `local` (default: `base`) |
+
+### Storage e indice
+
+| Variavel | Descricao | Default |
+|---|---|---|
+| `VIDEO_KB_INDEX_DB` | Path do banco SQLite de indice | `~/.transcreveai/index.db` |
+| `VIDEO_KB_STORAGE` | Backend de storage padrao | `filesystem` |
+| `VIDEO_KB_OBSIDIAN_VAULT` | Caminho absoluto da vault Obsidian | - |
+| `VIDEO_KB_OBSIDIAN_SUBDIR` | Subpasta dentro da vault | `transcreve-ai` |
+| `NOTION_API_KEY` | Token de integracao interna do Notion | - |
+| `NOTION_DATABASE_ID` | UUID do banco de dados Notion destino | - |
+| `VIDEO_KB_S3_BUCKET` | Nome do bucket S3 | - |
+| `VIDEO_KB_S3_PREFIX` | Prefixo/pasta dentro do bucket (opcional) | - |
+| `AWS_DEFAULT_REGION` | Regiao AWS | `us-east-1` |
+| `AWS_ENDPOINT_URL` | Endpoint S3-compatible: Minio, LocalStack, etc. | - |
+| `SUPABASE_URL` | URL do projeto Supabase (fase futura) | - |
+| `SUPABASE_KEY` | Chave anon/service Supabase (fase futura) | - |

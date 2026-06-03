@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from .ai import (
     openai_available,
@@ -8,6 +10,7 @@ from .ai import (
     transcript_near,
 )
 from .downloader import fetch_media
+from .index import DuplicateRunError, RunIndex, resolve_index_path
 from .media import extract_audio, extract_frames, probe_duration
 from .models import AnalysisResult, FrameObservation, KnowledgeSynthesis
 from .ocr import choose_language, ocr_image
@@ -18,7 +21,16 @@ from .providers import (
     resolve_provider_name,
 )
 from .report import write_markdown
-from .utils import ensure_dir, iso_now, now_id, slugify, write_json
+from .storage import ArtifactPaths, load_storage, resolve_storage_name
+from .utils import (
+    ensure_dir,
+    iso_now,
+    now_id,
+    sha256_file,
+    sha256_url,
+    slugify,
+    write_json,
+)
 
 
 @dataclass
@@ -30,12 +42,16 @@ class PipelineOptions:
     ai_mode: str = "auto"
     vision_model: str = ""
     transcribe_model: str = ""
-    language: Optional[str] = None
+    language: str | None = None
     tesseract_lang: str = "por+eng"
-    cookies_browser: Optional[str] = None
-    cookies: Optional[str] = None
+    cookies_browser: str | None = None
+    cookies: str | None = None
     video_format: str = "bv*+ba/b"
     provider_name: str = ""
+    # --- novas flags de persistencia ---
+    force: bool = False
+    storage_backend: str = "filesystem"
+    index_db: str | None = None
 
 
 class VideoKnowledgePipeline:
@@ -46,6 +62,60 @@ class VideoKnowledgePipeline:
         run_id = f"{now_id()}-{slugify(source)}"
         run_dir = ensure_dir(self.options.out_dir / run_id).resolve()
 
+        # ------------------------------------------------------------------
+        # Indice e dedupe - erros sao gracis: nunca derrubam a analise
+        # ------------------------------------------------------------------
+        index_path = resolve_index_path(self.options.index_db)
+        _index_ok = True
+        try:
+            _index_ctx = RunIndex(index_path)
+            _index_ctx._connect()
+        except Exception as _exc:  # noqa: BLE001
+            _index_ok = False
+            _index_ctx = None  # type: ignore[assignment]
+
+        source_is_url = source.startswith("http://") or source.startswith("https://")
+
+        # Calcula hash para URLs antes do download (early-exit de dedupe)
+        source_hash: str | None = None
+        if source_is_url:
+            try:
+                source_hash = sha256_url(source)
+            except Exception:  # noqa: BLE001
+                source_hash = None
+
+        # Checagem de dedupe para URLs (antes de baixar)
+        if source_hash and _index_ok and not self.options.force:
+            try:
+                existing = _index_ctx.find_by_hash(source_hash)  # type: ignore[union-attr]
+                if existing and existing.get("status") != "failed":
+                    if _index_ctx is not None:
+                        _index_ctx.close()
+                    raise DuplicateRunError(existing)
+            except DuplicateRunError:
+                raise
+            except Exception:  # noqa: BLE001
+                pass  # falha no indice nao derruba o pipeline
+
+        # Registro inicial no indice (status="partial") - gracil
+        _run_registered = False
+        if _index_ok and source_hash:
+            try:
+                _provider_name_for_index = resolve_provider_name(self.options.provider_name or None)
+                _index_ctx.register(  # type: ignore[union-attr]
+                    run_id=run_id,
+                    source=source,
+                    source_hash=source_hash,
+                    provider=_provider_name_for_index,
+                    ai_mode=self.options.ai_mode,
+                    status="partial",
+                    created_at=iso_now(),
+                    storage_backend=self.options.storage_backend,
+                )
+                _run_registered = True
+            except Exception:  # noqa: BLE001
+                pass
+
         print("1/6 Baixando ou copiando video...")
         media_path, metadata = fetch_media(
             source,
@@ -54,6 +124,46 @@ class VideoKnowledgePipeline:
             cookies=self.options.cookies,
             video_format=self.options.video_format,
         )
+
+        # Para arquivos locais, calcula hash apos download
+        if not source_is_url:
+            try:
+                source_hash = sha256_file(media_path)
+            except Exception:  # noqa: BLE001
+                source_hash = None
+
+            # Checagem de dedupe para arquivos locais
+            if source_hash and _index_ok and not self.options.force:
+                try:
+                    existing = _index_ctx.find_by_hash(source_hash)  # type: ignore[union-attr]
+                    if existing and existing.get("status") != "failed":
+                        if _index_ctx is not None:
+                            _index_ctx.close()
+                        raise DuplicateRunError(existing)
+                except DuplicateRunError:
+                    raise
+                except Exception:  # noqa: BLE001
+                    pass
+
+            # Registro inicial para arquivos locais (apos calcular hash)
+            if _index_ok and source_hash and not _run_registered:
+                try:
+                    _provider_name_for_index = resolve_provider_name(
+                        self.options.provider_name or None
+                    )
+                    _index_ctx.register(  # type: ignore[union-attr]
+                        run_id=run_id,
+                        source=source,
+                        source_hash=source_hash,
+                        provider=_provider_name_for_index,
+                        ai_mode=self.options.ai_mode,
+                        status="partial",
+                        created_at=iso_now(),
+                        storage_backend=self.options.storage_backend,
+                    )
+                    _run_registered = True
+                except Exception:  # noqa: BLE001
+                    pass
 
         warnings = []
         try:
@@ -176,6 +286,58 @@ class VideoKnowledgePipeline:
         print("6/6 Salvando analysis.json e knowledge.md...")
         write_json(run_dir / "analysis.json", result.to_dict())
         write_markdown(result, run_dir / "knowledge.md")
+
+        # ------------------------------------------------------------------
+        # Storage backend - gracil: falha adiciona warning mas nao aborta
+        # ------------------------------------------------------------------
+        artifacts = ArtifactPaths(
+            analysis_json=run_dir / "analysis.json",
+            markdown=run_dir / "knowledge.md",
+            frames_dir=frames_dir,
+            run_dir=run_dir,
+        )
+        storage_ref = None
+        try:
+            # Passa o backend ja resolvido explicitamente (default "filesystem"),
+            # em vez de None, para nao deixar VIDEO_KB_STORAGE sobrescrever a
+            # escolha que o pipeline ja fez.
+            storage_name = resolve_storage_name(self.options.storage_backend or "filesystem")
+            backend = load_storage(storage_name)
+            storage_ref = backend.save(result, artifacts)
+        except Exception as exc:  # noqa: BLE001
+            result.warnings.append(f"Storage backend falhou (artefatos locais mantidos): {exc}")
+
+        # ------------------------------------------------------------------
+        # Atualiza registro no indice com status final e paths
+        # ------------------------------------------------------------------
+        if _index_ok and _run_registered and source_hash:
+            try:
+                finished_at = datetime.now(timezone.utc).isoformat()
+                _index_ctx.update_run(  # type: ignore[union-attr]
+                    run_id,
+                    status="completed",
+                    finished_at=finished_at,
+                    title=result.metadata.title or "",
+                    duration_seconds=result.metadata.duration or 0.0,
+                    warnings_count=len(result.warnings),
+                    output_dir=(storage_ref.output_dir if storage_ref else str(run_dir)),
+                    analysis_path=(
+                        storage_ref.analysis_path if storage_ref else str(run_dir / "analysis.json")
+                    ),
+                    markdown_path=(
+                        storage_ref.markdown_path if storage_ref else str(run_dir / "knowledge.md")
+                    ),
+                    storage_backend=(storage_ref.backend if storage_ref else "filesystem"),
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        if _index_ctx is not None:
+            try:
+                _index_ctx.close()
+            except Exception:  # noqa: BLE001
+                pass
+
         return result
 
     def _should_use_ai(self, provider_name: str) -> bool:

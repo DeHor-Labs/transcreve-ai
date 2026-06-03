@@ -194,6 +194,107 @@ More selective AI vision:
 transcreveai analyze "https://youtu.be/..." --ai auto --max-frames 120 --visual-limit 16
 ```
 
+## Historico e Storage
+
+### Historico de runs
+
+Cada execucao e registrada automaticamente num banco SQLite em `~/.transcreveai/index.db`. Use o subcomando `runs` para consultar e gerenciar o historico:
+
+```bash
+# Listar os 20 runs mais recentes
+transcreveai runs list
+
+# Listar em JSON (integravel com jq, scripts, etc.)
+transcreveai runs list --json
+
+# Exibir detalhes de um run especifico
+transcreveai runs show <run_id>
+
+# Remover um run do indice
+transcreveai runs rm <run_id>
+
+# Remover do indice E apagar o diretorio de saida do disco
+transcreveai runs rm <run_id> --purge
+
+# Remover sem confirmacao interativa
+transcreveai runs rm <run_id> --force
+```
+
+O path do banco pode ser alterado por variavel de ambiente ou flag global:
+
+```bash
+VIDEO_KB_INDEX_DB=~/meu-projeto/index.db transcreveai runs list
+transcreveai --index-db ~/meu-projeto/index.db runs list
+```
+
+### Dedupe automatico
+
+O TranscreveAI calcula um SHA-256 de cada fonte (URL ou arquivo) antes de processar. Se um run com o mesmo hash ja existir no indice, o pipeline exibe uma mensagem e encerra sem reprocessar:
+
+```
+Pulando: run '20260601T...' ja existe em 'outputs/...'.
+Use --force para reprocessar mesmo assim.
+```
+
+Para forcar o reprocessamento:
+
+```bash
+transcreveai analyze "https://youtu.be/..." --force
+```
+
+### Backends de storage
+
+Por padrao os artefatos ficam no diretorio de saida local (`--out`). Use `--storage` para enviar para outros destinos:
+
+```bash
+# Exportar para vault do Obsidian
+transcreveai analyze "https://youtu.be/..." --storage obsidian
+
+# Criar pagina no Notion
+transcreveai analyze "https://youtu.be/..." --storage notion
+
+# Upload para bucket S3
+transcreveai analyze "https://youtu.be/..." --storage s3
+
+# Definir backend padrao via variavel de ambiente
+VIDEO_KB_STORAGE=obsidian transcreveai analyze "https://youtu.be/..."
+```
+
+| Backend | Extra necessario | Env vars obrigatorias |
+|---|---|---|
+| `filesystem` (padrao) | nenhum | - |
+| `obsidian` | `transcreve-ai[obsidian]` | `VIDEO_KB_OBSIDIAN_VAULT` |
+| `notion` | `transcreve-ai[notion]` | `NOTION_API_KEY`, `NOTION_DATABASE_ID` |
+| `supabase` | `transcreve-ai[supabase]` | `SUPABASE_URL`, `SUPABASE_KEY` |
+| `s3` | `transcreve-ai[s3]` | `VIDEO_KB_S3_BUCKET` + credenciais AWS |
+
+> Nota: o backend `supabase` esta marcado como fase futura e ainda nao foi implementado. Selecionar `--storage supabase` levanta `NotImplementedError`. Use `filesystem` (padrao), `obsidian`, `notion` ou `s3` por enquanto.
+
+Instale o extra desejado antes de usar:
+
+```bash
+pip install transcreve-ai[obsidian]
+pip install transcreve-ai[notion]
+pip install transcreve-ai[s3]
+```
+
+#### Variaveis de ambiente de storage
+
+| Variavel | Descricao |
+|---|---|
+| `VIDEO_KB_STORAGE` | Backend padrao quando `--storage` nao e passado |
+| `VIDEO_KB_INDEX_DB` | Path do banco SQLite de indice (default: `~/.transcreveai/index.db`) |
+| `VIDEO_KB_OBSIDIAN_VAULT` | Caminho absoluto da vault Obsidian |
+| `VIDEO_KB_OBSIDIAN_SUBDIR` | Subpasta dentro da vault (default: `transcreve-ai`) |
+| `NOTION_API_KEY` | Token de integracao interna do Notion |
+| `NOTION_DATABASE_ID` | UUID do banco de dados Notion destino |
+| `VIDEO_KB_S3_BUCKET` | Nome do bucket S3 |
+| `VIDEO_KB_S3_PREFIX` | Prefixo/pasta dentro do bucket (opcional) |
+| `AWS_DEFAULT_REGION` | Regiao AWS (default: `us-east-1`) |
+| `AWS_ENDPOINT_URL` | Endpoint S3-compatible: Minio, LocalStack, etc. |
+
+---
+
 ## Providers / Modelos
 
 TranscreveAI suporta multiplos providers de IA. Use `--provider` para escolher:

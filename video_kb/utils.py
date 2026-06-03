@@ -3,6 +3,7 @@ import json
 import os
 import re
 import subprocess
+import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -75,6 +76,67 @@ def write_json(path: Path, data: dict[str, Any]) -> None:
         json.dumps(data, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+
+def sha256_url(url: str) -> str:
+    """
+    Retorna o sha256 de uma URL remota normalizada.
+
+    Extrai o ID canonico quando possivel (YouTube, Vimeo) e descarta
+    parametros de rastreamento para garantir que URLs equivalentes
+    produzam o mesmo hash.
+    """
+    _TRACKING_PARAMS = frozenset(
+        {
+            "t",
+            "si",
+            "pp",
+            "feature",
+            "ref",
+            "index",
+            "list",
+            "utm_source",
+            "utm_medium",
+            "utm_campaign",
+            "utm_term",
+            "utm_content",
+        }
+    )
+
+    parsed = urllib.parse.urlparse(url)
+    host = parsed.netloc.lower().lstrip("www.")
+    path_lower = parsed.path.rstrip("/").lower()
+    qs = urllib.parse.parse_qs(parsed.query, keep_blank_values=False)
+
+    # YouTube: youtube.com ou youtu.be
+    if host in ("youtube.com", "youtu.be", "m.youtube.com"):
+        if host == "youtu.be":
+            vid = path_lower.lstrip("/")
+        else:
+            vid = (qs.get("v") or [""])[0]
+            if not vid:
+                # /shorts/<id> ou /embed/<id>
+                parts = path_lower.strip("/").split("/")
+                vid = parts[-1] if len(parts) >= 2 else ""
+        if vid:
+            canonical = f"youtube:{vid}"
+            return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    # Vimeo: vimeo.com
+    if host == "vimeo.com":
+        parts = path_lower.strip("/").split("/")
+        vid = parts[0] if parts else ""
+        if vid and vid.isdigit():
+            canonical = f"vimeo:{vid}"
+            return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    # Fallback generico: host + path sem parametros de rastreamento
+    clean_qs = {k: v for k, v in qs.items() if k not in _TRACKING_PARAMS}
+    clean_query = urllib.parse.urlencode(clean_qs, doseq=True)
+    canonical = f"{host}{path_lower}"
+    if clean_query:
+        canonical = f"{canonical}?{clean_query}"
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def sha256_file(path: Path) -> str:
