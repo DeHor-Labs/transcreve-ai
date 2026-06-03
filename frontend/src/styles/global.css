@@ -1,0 +1,148 @@
+@import './tokens.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: 'Inter', sans-serif;
+  font-size: var(--text-base);
+  line-height: 1.6;
+  min-height: 100dvh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--color-text-primary);
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+  transition: opacity var(--dur-fast) ease;
+}
+a:hover {
+  opacity: 0.8;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+/* Scrollbar customizada */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-surface-1);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: var(--radius-pill);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* Animacoes com reducao de movimento */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transform: none !important;
+  }
+}
+
+/* Utilitarios de animacao de entrada */
+.animate-stagger > * {
+  animation: slideIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.animate-stagger > *:nth-child(2) { animation-delay: 40ms; }
+.animate-stagger > *:nth-child(3) { animation-delay: 80ms; }
+.animate-stagger > *:nth-child(4) { animation-delay: 120ms; }
+.animate-stagger > *:nth-child(5) { animation-delay: 160ms; }
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Estilos para o MarkdownRenderer */
+.prose-custom h1, .prose-custom h2, .prose-custom h3 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+.prose-custom h1 { font-size: var(--text-xl); }
+.prose-custom h2 { font-size: var(--text-lg); }
+.prose-custom h3 { font-size: var(--text-base); }
+.prose-custom p { margin-bottom: 0.75em; }
+.prose-custom ul, .prose-custom ol {
+  padding-left: 1.25em;
+  margin-bottom: 0.75em;
+}
+.prose-custom li { margin-bottom: 0.25em; }
+.prose-custom code {
+  background: var(--color-surface-2);
+  padding: 0.1em 0.4em;
+  border-radius: 3px;
+  font-size: 0.875em;
+  color: var(--color-accent);
+}
+.prose-custom pre {
+  background: var(--color-surface-2);
+  padding: 1em;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin-bottom: 1em;
+}
+.prose-custom pre code {
+  background: none;
+  padding: 0;
+  color: var(--color-text-secondary);
+}
+.prose-custom blockquote {
+  border-left: 3px solid var(--color-border);
+  padding-left: 1em;
+  color: var(--color-text-muted);
+  margin-bottom: 0.75em;
+}
+.prose-custom a { color: var(--color-accent); }
+.prose-custom strong { color: var(--color-text-primary); font-weight: 700; }
+.prose-custom hr { border-color: var(--color-border); margin: 1.5em 0; }
+
+@keyframes pulse-ring {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--color-accent) 30%, transparent); }
+  50%       { box-shadow: 0 0 0 6px color-mix(in oklch, var(--color-accent) 0%, transparent); }
+}
+
+.pulse-ring {
+  animation: pulse-ring 2s ease-in-out infinite;
+}

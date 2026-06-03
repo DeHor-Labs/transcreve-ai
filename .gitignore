@@ -41,3 +41,9 @@ agent-browser*.png
 browser-use*.log
 playwright-report/
 test-results/
+
+# Frontend
+frontend/dist/
+
+# Artefato de path invalido (sqlite criado com string literal ':memory:')
+:memory:

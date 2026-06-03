@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 from .ai import (
     openai_available,
@@ -52,6 +53,10 @@ class PipelineOptions:
     force: bool = False
     storage_backend: str = "filesystem"
     index_db: str | None = None
+    # --- callback opcional de progresso (web UI) ---
+    # Assinatura: on_progress(step: str, detail: str) -> None
+    # Default None: comportamento identico ao anterior (so prints)
+    on_progress: Callable[[str, str], None] | None = field(default=None, repr=False)
 
 
 class VideoKnowledgePipeline:
@@ -61,6 +66,11 @@ class VideoKnowledgePipeline:
     def run(self, source: str) -> AnalysisResult:
         run_id = f"{now_id()}-{slugify(source)}"
         run_dir = ensure_dir(self.options.out_dir / run_id).resolve()
+
+        def _emit(step: str, detail: str) -> None:
+            print(detail)
+            if self.options.on_progress:
+                self.options.on_progress(step, detail)
 
         # ------------------------------------------------------------------
         # Indice e dedupe - erros sao gracis: nunca derrubam a analise
@@ -116,7 +126,7 @@ class VideoKnowledgePipeline:
             except Exception:  # noqa: BLE001
                 pass
 
-        print("1/6 Baixando ou copiando video...")
+        _emit("download", "Baixando ou copiando video...")
         media_path, metadata = fetch_media(
             source,
             run_dir,
@@ -171,7 +181,7 @@ class VideoKnowledgePipeline:
         except Exception as exc:  # noqa: BLE001
             warnings.append(f"Nao foi possivel ler duracao com ffprobe: {exc}")
 
-        print("2/6 Extraindo audio...")
+        _emit("audio", "Extraindo audio...")
         audio_path = run_dir / "audio.mp3"
         try:
             extract_audio(media_path, audio_path)
@@ -179,7 +189,7 @@ class VideoKnowledgePipeline:
             warnings.append(f"Nao foi possivel extrair audio: {exc}")
             audio_path = None  # type: ignore[assignment]
 
-        print("3/6 Extraindo frames...")
+        _emit("frames", "Extraindo frames...")
         frames_dir = ensure_dir(run_dir / "frames")
         frame_paths = extract_frames(
             media_path,
@@ -189,7 +199,7 @@ class VideoKnowledgePipeline:
             max_frames=self.options.max_frames,
         )
 
-        print("4/6 Rodando OCR local...")
+        _emit("ocr", f"Rodando OCR em {len(frame_paths)} frames...")
         ocr_lang, ocr_warning = choose_language(self.options.tesseract_lang)
         if ocr_warning:
             warnings.append(ocr_warning)
@@ -220,7 +230,7 @@ class VideoKnowledgePipeline:
         use_ai = self._should_use_ai(provider_name)
 
         if use_ai and audio_path:
-            print(f"5/6 Transcrevendo e descrevendo visualmente com IA ({provider_name})...")
+            _emit("ai", f"Transcrevendo e descrevendo com IA ({provider_name})...")
             try:
                 provider = load_provider(provider_name)
 
@@ -237,7 +247,7 @@ class VideoKnowledgePipeline:
                 visual_indexes = select_visual_frames(result.frames, self.options.visual_limit)
                 for position, index in enumerate(visual_indexes, start=1):
                     frame = result.frames[index]
-                    print(f"   IA visual {position}/{len(visual_indexes)} em {frame.image_path}...")
+                    _emit("ai_frame", f"Frame {position}/{len(visual_indexes)}")
                     frame_path = run_dir / frame.image_path
                     context = transcript_near(result.transcript_segments, frame.timestamp)
                     try:
@@ -280,10 +290,10 @@ class VideoKnowledgePipeline:
                     f"Provider '{provider_name}' indisponivel;"
                     " gerando dossie local sem transcricao/visao por IA"
                 )
-            print("5/6 Gerando sintese local...")
+            print("5/6 Gerando sintese local...")  # sem step SSE para este branch
             result.synthesis = _local_synthesis(result)
 
-        print("6/6 Salvando analysis.json e knowledge.md...")
+        _emit("persist", "Salvando analysis.json e knowledge.md...")
         write_json(run_dir / "analysis.json", result.to_dict())
         write_markdown(result, run_dir / "knowledge.md")
 

@@ -135,6 +135,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Nao pede confirmacao interativa",
     )
 
+    # ------------------------------------------------------------------
+    # serve
+    # ------------------------------------------------------------------
+    serve_parser = subparsers.add_parser("serve", help="Inicia o servidor web TranscreveAI")
+    serve_parser.add_argument(
+        "--host", default="127.0.0.1", help="Host do servidor (default: 127.0.0.1)"
+    )
+    serve_parser.add_argument(
+        "--port", type=int, default=8000, help="Porta do servidor (default: 8000)"
+    )
+    serve_parser.add_argument(
+        "--out", default="outputs", help="Diretorio de saida dos jobs (default: outputs)"
+    )
+    serve_parser.add_argument(
+        "--reload", action="store_true", default=False, help="Hot-reload (apenas desenvolvimento)"
+    )
+
     return parser
 
 
@@ -150,6 +167,8 @@ def main() -> None:
 
     if args.command == "analyze":
         _cmd_analyze(args)
+    elif args.command == "serve":
+        _cmd_serve(args)
     elif args.command == "runs":
         if args.runs_command == "list":
             _cmd_runs_list(args)
@@ -162,6 +181,23 @@ def main() -> None:
 # ---------------------------------------------------------------------------
 # Implementacoes dos comandos
 # ---------------------------------------------------------------------------
+
+
+def _cmd_serve(args: argparse.Namespace) -> None:
+    try:
+        import uvicorn
+
+        from .web.app import create_app
+    except ImportError as exc:
+        print(f"Dependencias web ausentes: {exc}", file=sys.stderr)
+        print("Instale com: pip install 'transcreve-ai[web]'", file=sys.stderr)
+        sys.exit(1)
+
+    app = create_app(
+        out_dir=Path(args.out),
+        index_db=getattr(args, "index_db", None),
+    )
+    uvicorn.run(app, host=args.host, port=args.port, reload=args.reload)
 
 
 def _cmd_analyze(args: argparse.Namespace) -> None:

@@ -5,6 +5,7 @@
 | Comando | Descricao |
 |---|---|
 | `transcreveai analyze SOURCE` | Analisa um link ou arquivo de video |
+| `transcreveai serve` | Inicia o servidor web com API e SPA |
 | `transcreveai runs list` | Lista o historico de runs |
 | `transcreveai runs show RUN_ID` | Exibe detalhes de um run |
 | `transcreveai runs rm RUN_ID` | Remove um run do indice |
@@ -224,6 +225,63 @@ transcreveai runs rm 20260601T060803Z-youtu-be-abc123 --purge
 
 # Remove tudo sem confirmacao (uso em scripts)
 transcreveai runs rm 20260601T060803Z-youtu-be-abc123 --purge --force
+```
+
+---
+
+---
+
+## `transcreveai serve`
+
+Inicia o servidor web TranscreveAI. Requer o extra `web` instalado:
+
+```bash
+pip install 'transcreve-ai[web]'
+```
+
+```bash
+transcreveai serve [opcoes]
+```
+
+### Opcoes
+
+| Flag | Descricao | Default |
+|---|---|---|
+| `--host HOST` | Endereco de bind do servidor | `127.0.0.1` |
+| `--port PORT` | Porta do servidor | `8000` |
+| `--out DIR` | Diretorio de saida dos jobs processados | `outputs` |
+| `--reload` | Hot-reload para desenvolvimento (nao usar em producao) | `false` |
+
+O `--index-db` global tambem e respeitado:
+
+```bash
+transcreveai --index-db ~/meu.db serve --port 8080
+```
+
+### Comportamento
+
+- Sobe uma aplicacao FastAPI com a API REST em `/api/*` e docs Swagger em `/api/docs`.
+- Se `frontend/dist/` existir, serve a SPA em `/`. Caso contrario, apenas a API fica disponivel.
+- Processa jobs de forma serial (um por vez) em background com asyncio.
+
+### Exemplos
+
+```bash
+# Inicio basico
+transcreveai serve
+
+# Exposto na rede local, porta alternativa
+transcreveai serve --host 0.0.0.0 --port 8080
+
+# Com banco de indice customizado
+transcreveai --index-db ~/projetos/meu.db serve
+
+# Desenvolvimento com hot-reload (backend)
+transcreveai serve --reload
+
+# Construir e servir o frontend em producao
+cd frontend && pnpm build
+transcreveai serve
 ```
 
 ---

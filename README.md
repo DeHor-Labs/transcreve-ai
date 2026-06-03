@@ -357,6 +357,67 @@ URL or file
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a deeper walkthrough.
 
+## Interface Web
+
+A interface web e um extra opcional que expoe o pipeline por meio de uma API HTTP e serve
+uma SPA React para analise interativa de videos.
+
+### Instalacao e inicio
+
+```bash
+pip install 'transcreve-ai[web]'
+transcreveai serve
+```
+
+Acesse `http://localhost:8000` no navegador.
+
+### Flags do comando `serve`
+
+```bash
+transcreveai serve [--host HOST] [--port PORT] [--out DIR] [--reload]
+```
+
+| Flag | Descricao | Default |
+|---|---|---|
+| `--host` | Endereco de bind | `127.0.0.1` |
+| `--port` | Porta | `8000` |
+| `--out` | Diretorio de saida dos jobs | `outputs` |
+| `--reload` | Hot-reload (apenas desenvolvimento) | `false` |
+
+### Construir o frontend
+
+O repositorio inclui o codigo-fonte do frontend em `frontend/`. Para gerar os arquivos
+estaticos que o servidor serve em producao:
+
+```bash
+cd frontend && pnpm build
+```
+
+O resultado e gravado em `frontend/dist/`. O servidor detecta automaticamente esse
+diretorio e serve a SPA.
+
+Para desenvolvimento do frontend com hot-reload:
+
+```bash
+cd frontend && pnpm dev
+```
+
+O Vite sobe em `localhost:5173` e faz proxy de `/api/*` para `localhost:8000` (o backend
+deve estar rodando em paralelo).
+
+### Fluxo de uso
+
+1. **Submeter** - cole um link ou arraste um arquivo na pagina inicial, escolha o provider
+   e o modo de IA e clique em analisar.
+2. **Acompanhar** - a pagina do job exibe uma barra de progresso e uma timeline de etapas
+   atualizadas em tempo real via SSE (Server-Sent Events).
+3. **Historico** - a pagina inicial lista todos os jobs anteriores, incluindo os registrados
+   pelo CLI. Clicar em um job abre o detalhe ou o dossie.
+4. **Dossie** - ao concluir, a pagina exibe o dossie completo: resumo, capitulos, entidades,
+   ferramentas, afirmacoes e o `knowledge.md` renderizado.
+
+---
+
 ## Automation Shape
 
 The CLI is intentionally worker-friendly:
