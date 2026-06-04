@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# Transcreve AI - video intelligence, extraction pipeline, FastAPI, React
+
+language: "pt-BR"
+tone_instructions: "Assertivo, prático e focado em bugs reais, segurança e confiabilidade. Sem exagerar em sugestões cosméticas."
+early_access: false
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  poem: false
+  sequence_diagrams: true
+  estimate_code_review_effort: true
+
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: false
+    base_branches:
+      - main
+
+  path_instructions:
+    - path: "video_kb/**/*.py"
+      instructions: |
+        Pipeline Python de inteligencia de video. Priorizar:
+        - falhas reais em download, fallback de providers, retries e timeouts;
+        - validacao de URL para evitar SSRF, path traversal e leitura indevida de arquivos locais;
+        - logs sem tokens, cookies, URLs assinadas ou dados sensiveis;
+        - erros acionaveis para CLI/API, sem stack trace cru para usuario final;
+        - testes cobrindo fonte, provider e caso de falha.
+
+    - path: "video_kb/web/**/*.py"
+      instructions: |
+        API FastAPI. Verificar schemas, status codes, limites de tamanho, validacao de entrada,
+        CORS, streaming/eventos e tratamento de jobs concorrentes.
+
+    - path: "frontend/src/**/*.{ts,tsx}"
+      instructions: |
+        Frontend React/TypeScript. Verificar tipos estritos, estados de loading/erro,
+        cancelamento de requests/event streams, acessibilidade basica e ausencia de secrets no client.
+
+    - path: "tests/**/*.py"
+      instructions: |
+        Testes devem ser deterministas, sem depender de rede real quando um mock/fake resolver.
+        Preferir fixtures pequenas e casos de regressao para providers e extraidores.
+
+    - path: ".github/workflows/**"
+      instructions: |
+        GitHub Actions com permissions minimas, cache seguro, sem secrets em logs, path filters
+        quando evitar CI pesado em docs-only fizer sentido.
+
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/.venv/**"
+    - "!**/__pycache__/**"
+    - "!**/.pytest_cache/**"
+    - "!**/.mypy_cache/**"
+    - "!**/.ruff_cache/**"
+    - "!**/dist/**"
+    - "!**/build/**"
+    - "!**/.next/**"
+    - "!**/coverage/**"
+    - "!**/*.lock"
+    - "!**/pnpm-lock.yaml"
+    - "!**/*.snap"
+    - "!**/*.png"
+    - "!**/*.jpg"
+    - "!**/*.jpeg"
+    - "!**/*.webp"
+    - "!**/*.gif"
+    - "!**/*.mp4"
+    - "!**/*.mov"
+    - "!**/*.pdf"
+
+  tools:
+    gitleaks:
+      enabled: true
+    semgrep:
+      enabled: true
+    presidio:
+      enabled: true
+    markdownlint:
+      enabled: false
+
+knowledge_base:
+  web_search:
+    enabled: true
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
+      - "README.md"
+      - "docs/**/*.md"
+  learnings:
+    scope: "local"
+
+chat:
+  auto_reply: true
