@@ -2,9 +2,19 @@ name: CI
 
 on:
   push:
-    branches: [main, feat/plataforma-20260603]
+    branches: [main]
+    paths-ignore:
+      - "README.md"
+      - "docs/**"
+      - "skills/**"
+      - ".coderabbit.yaml"
   pull_request:
-    branches: [main, feat/plataforma-20260603]
+    branches: [main]
+    paths-ignore:
+      - "README.md"
+      - "docs/**"
+      - "skills/**"
+      - ".coderabbit.yaml"
 
 jobs:
   test:
