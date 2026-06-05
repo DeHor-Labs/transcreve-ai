@@ -55,7 +55,11 @@ jobs:
   quality:
     name: Quality
     needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.python == 'true'
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      needs.changes.outputs.python == 'true' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'coverage'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
@@ -64,23 +68,26 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
         with:
           python-version: "3.14"
-          cache: pip
-          cache-dependency-path: pyproject.toml
+      - name: Install uv
+        run: python -m pip install uv
       - name: Install package
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,obsidian,web,rag]"
+          uv sync --frozen --python 3.14 --extra dev --extra obsidian --extra web --extra rag
       - name: Ruff lint
-        run: python -m ruff check video_kb tests
+        run: uv run python -m ruff check video_kb tests
       - name: MyPy typecheck
-        run: python -m mypy video_kb tests
+        run: uv run python -m mypy video_kb tests
       - name: Compile Python files
-        run: python -m compileall video_kb tests
+        run: uv run python -m compileall video_kb tests
 
   python-tests:
     name: Python tests (${{ matrix.python-version }})
     needs: [changes, quality]
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.python == 'true'
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      needs.changes.outputs.python == 'true' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'coverage'))
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -93,18 +100,17 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: pyproject.toml
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg tesseract-ocr
+      - name: Install uv
+        run: python -m pip install uv
       - name: Install package
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,obsidian,web,rag]"
+          uv sync --frozen --python ${{ matrix.python-version }} --extra dev --extra obsidian --extra web --extra rag
       - name: Pytest
-        run: python -m pytest tests
+        run: uv run python -m pytest tests
 
   coverage:
     name: Coverage
@@ -124,19 +130,18 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
         with:
           python-version: "3.14"
-          cache: pip
-          cache-dependency-path: pyproject.toml
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg tesseract-ocr
+      - name: Install uv
+        run: python -m pip install uv
       - name: Install package
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,obsidian,web,rag]"
+          uv sync --frozen --python 3.14 --extra dev --extra obsidian --extra web --extra rag
       - name: Pytest with coverage
         run: |
-          python -m pytest \
+          uv run python -m pytest \
             --cov=video_kb \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml
