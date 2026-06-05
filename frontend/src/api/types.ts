@@ -74,6 +74,16 @@ export interface SubmitResponse {
   queued_at: string;
 }
 
+export interface SourceProbeResponse {
+  source: string;
+  kind: string;
+  adapter: string;
+  is_url: boolean;
+  canonical: string;
+  requires_cookies: boolean;
+  notes: string[];
+}
+
 export interface SubmitUrlPayload {
   source: string;
   language?: string;

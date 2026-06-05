@@ -180,6 +180,49 @@ class TestSubmitJob(_WebTestCase):
         data = resp.json()
         self.assertIn("job_id", data)
 
+    def test_submit_rejeita_url_local_ou_privada(self) -> None:
+        blocked_sources = [
+            "http://localhost/video.mp4",
+            "http://127.0.0.1/video.mp4",
+            "http://[::1]/video.mp4",
+            "http://10.0.0.5/video.mp4",
+            "http://172.16.0.5/video.mp4",
+            "http://192.168.1.5/video.mp4",
+            "http://169.254.169.254/latest/meta-data/",
+        ]
+        for source in blocked_sources:
+            with self.subTest(source=source):
+                resp = self.client.post("/api/jobs", json={"source": source})
+                self.assertEqual(resp.status_code, 422)
+                data = resp.json()
+                self.assertEqual(data["error"], "validation")
+                self.assertIn("nao permitida", data["message"])
+
+    def test_submit_json_rejeita_caminho_local(self) -> None:
+        with tempfile.NamedTemporaryFile(suffix=".mp4", dir=self._tmp_dir, delete=False) as handle:
+            handle.write(b"dummy")
+            local_path = handle.name
+
+        resp = self.client.post("/api/jobs", json={"source": local_path})
+        self.assertEqual(resp.status_code, 422)
+        body = json.dumps(resp.json())
+        self.assertIn("http(s)", body)
+        self.assertNotIn(local_path, body)
+
+    def test_submit_upload_multipart_retorna_job_id(self) -> None:
+        video_bytes = b"\x00\x00\x00\x18ftypmp42fake-video"
+
+        resp = self.client.post(
+            "/api/jobs",
+            files={"file": ("clip.mp4", video_bytes, "video/mp4")},
+            data={"ai_mode": "off", "provider": "local"},
+        )
+
+        self.assertEqual(resp.status_code, 202)
+        data = resp.json()
+        self.assertIn("job_id", data)
+        self.assertEqual(data["status"], "queued")
+
 
 # ---------------------------------------------------------------------------
 # 3. GET /api/jobs
@@ -440,7 +483,71 @@ class TestSSEEndpoint(_WebTestCase):
 
 
 # ---------------------------------------------------------------------------
-# 8. Smoke de integracao: StaticFiles serve index.html se dist existir
+# 9. POST /api/sources/probe
+# ---------------------------------------------------------------------------
+
+
+class TestSourceProbeEndpoint(_WebTestCase):
+    def test_source_probe_youtube(self) -> None:
+        resp = self.client.post("/api/sources/probe", json={"source": "https://youtu.be/abc123"})
+        self.assertEqual(resp.status_code, 200)
+
+        data = resp.json()
+        for campo in (
+            "source",
+            "kind",
+            "adapter",
+            "is_url",
+            "canonical",
+            "requires_cookies",
+            "notes",
+        ):
+            self.assertIn(campo, data)
+        self.assertEqual(data["kind"], "youtube")
+        self.assertEqual(data["adapter"], "youtube")
+        self.assertTrue(data["is_url"])
+
+    def test_source_probe_rejeita_local_file_sem_vazar_path(self) -> None:
+        with tempfile.NamedTemporaryFile(suffix=".mp4", dir=self._tmp_dir, delete=False) as handle:
+            handle.write(b"dummy")
+            local_path = handle.name
+
+        for source in (local_path, f"file://{local_path}"):
+            with self.subTest(source=source):
+                resp = self.client.post("/api/sources/probe", json={"source": source})
+                self.assertEqual(resp.status_code, 422)
+                body = json.dumps(resp.json())
+                self.assertIn("http(s)", body)
+                self.assertNotIn(local_path, body)
+                self.assertNotIn(str(Path(local_path).parent), body)
+
+    def test_source_probe_rejeita_url_privada(self) -> None:
+        resp = self.client.post(
+            "/api/sources/probe",
+            json={"source": "http://169.254.169.254/latest/meta-data/"},
+        )
+        self.assertEqual(resp.status_code, 422)
+        data = resp.json()
+        self.assertEqual(data["error"], "validation")
+        self.assertIn("nao permitida", data["message"])
+
+    def test_source_probe_sem_source_retorna_422(self) -> None:
+        resp = self.client.post("/api/sources/probe", json={})
+        self.assertEqual(resp.status_code, 422)
+        data = resp.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"], "validation")
+
+    def test_source_probe_source_vazio_retorna_422(self) -> None:
+        resp = self.client.post("/api/sources/probe", json={"source": "   "})
+        self.assertEqual(resp.status_code, 422)
+        data = resp.json()
+        self.assertIn("message", data)
+        self.assertIn("obrigatorio", data["message"].lower())
+
+
+# ---------------------------------------------------------------------------
+# 10. Smoke de integracao: StaticFiles serve index.html se dist existir
 # ---------------------------------------------------------------------------
 
 

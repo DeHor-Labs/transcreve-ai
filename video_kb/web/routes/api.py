@@ -7,10 +7,14 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
+from starlette.datastructures import UploadFile
 
+from ...downloader import UnsafeDownloadUrlError, validate_public_download_url
+from ...sources import detect_source
 from ..jobs import ActiveJob, JobStore
 from ..schemas import (
     AskRequest,
@@ -24,9 +28,37 @@ from ..schemas import (
     SearchRequest,
     SearchResponse,
     SearchResult,
+    SourceProbeResponse,
 )
 
 router = APIRouter()
+
+
+def _is_http_probe_source(source: str) -> bool:
+    parsed = urlparse(source)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _validate_web_url_source(source: str) -> JSONResponse | None:
+    if not _is_http_probe_source(source):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "validation",
+                "message": "Use uma URL http(s) publica ou envie arquivo pelo upload.",
+            },
+        )
+    try:
+        validate_public_download_url(source, resolve_dns=False)
+    except UnsafeDownloadUrlError as exc:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "validation",
+                "message": f"URL nao permitida para download remoto: {exc}",
+            },
+        )
+    return None
 
 _VERSION = "0.1.0"
 
@@ -205,6 +237,9 @@ async def submit_job(
                     "message": "Campo 'source' obrigatorio quando nao ha arquivo anexado.",
                 },
             )
+        invalid_url_response = _validate_web_url_source(source)
+        if invalid_url_response is not None:
+            return invalid_url_response
         language = body.get("language") or None
         ai_mode = body.get("ai_mode") or "auto"
         provider = body.get("provider") or "openai"
@@ -685,4 +720,76 @@ def health(
         version=request.app.state.version,
         queue_size=queue_size,
         active_job=active_job,
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/sources/probe
+# ---------------------------------------------------------------------------
+
+
+@router.post("/sources/probe", response_model=SourceProbeResponse)
+async def probe_source(request: Request) -> SourceProbeResponse | JSONResponse:
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "validation",
+                "message": "Body JSON invalido.",
+            },
+        )
+
+    if not isinstance(body, dict):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "validation",
+                "message": "Corpo da requisicao deve ser um objeto JSON.",
+            },
+        )
+
+    if not isinstance(body.get("source"), str):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "validation",
+                "message": "Campo 'source' obrigatorio e deve ser texto.",
+            },
+        )
+
+    source = body.get("source", "").strip()
+    if not source:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "validation",
+                "message": "Campo 'source' obrigatorio e nao pode ser vazio.",
+            },
+        )
+
+    invalid_url_response = _validate_web_url_source(source)
+    if invalid_url_response is not None:
+        return invalid_url_response
+
+    try:
+        probe = detect_source(source)
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "validation",
+                "message": str(exc),
+            },
+        )
+
+    return SourceProbeResponse(
+        source=probe.source,
+        kind=probe.kind,
+        adapter=probe.adapter,
+        is_url=probe.is_url,
+        canonical=probe.canonical,
+        requires_cookies=probe.requires_cookies,
+        notes=list(probe.notes),
     )

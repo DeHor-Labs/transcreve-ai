@@ -23,6 +23,8 @@
   ·
   <a href="#example-output">Example Output</a>
   ·
+  <a href="#agent-video-intelligence">Agent Video Intelligence</a>
+  ·
   <a href="#architecture">Architecture</a>
   ·
   <a href="docs/CLI_REFERENCE.md">CLI Reference</a>
@@ -73,6 +75,37 @@ Most "video to text" workflows miss half the signal.
 - A knowledge base needs structured evidence, not a transcript blob.
 
 TranscreveAI is built around the idea that video knowledge is multimodal by default.
+
+## Agent Video Intelligence
+
+TranscreveAI can also work as an agent capability: Codex, Claude Code or another local agent can inspect a video URL, run the pipeline, read the dossier, index it, and answer follow-up questions from the generated evidence.
+
+```bash
+transcreveai agent run "https://www.instagram.com/reel/..." \
+  --question "quais ferramentas, passos e riscos aparecem no video?" \
+  --json
+
+# Or run each step manually:
+transcreveai sources probe "https://www.instagram.com/reel/..." --json
+transcreveai analyze "https://www.instagram.com/reel/..." --ai auto --language pt
+transcreveai index <run_id>
+transcreveai ask "quais ferramentas, passos e riscos aparecem no video?" --run-id <run_id>
+```
+
+Project artifacts:
+
+- Agent skill: [`skills/transcreveai-video-intelligence/SKILL.md`](skills/transcreveai-video-intelligence/SKILL.md)
+- Demo pack: [`docs/AGENT_VIDEO_INTELLIGENCE.md`](docs/AGENT_VIDEO_INTELLIGENCE.md)
+- Source support matrix: [`docs/source-support-matrix.md`](docs/source-support-matrix.md)
+
+Install the project skill in Codex:
+
+```bash
+mkdir -p ~/.codex/skills
+cp -R skills/transcreveai-video-intelligence ~/.codex/skills/
+```
+
+Use this mode when the goal is not just a transcript, but a reusable playbook: tools/products shown on screen, prompts, steps, risks, open questions and timestamped evidence.
 
 ## Quick Start
 
@@ -379,7 +412,7 @@ transcreveai ask "ferramentas mostradas no video" --search-only
 transcreveai ask "o que foi dito sobre autenticacao?"
 
 # Limitar busca a runs especificos
-transcreveai ask "qual e o fluxo de cadastro?" --run-ids <run_id1> <run_id2>
+transcreveai ask "qual e o fluxo de cadastro?" --run-id <run_id1> --run-id <run_id2>
 
 # Usar provider offline (sem custo de API)
 transcreveai ask "resumo dos capitulos" --provider local
@@ -403,6 +436,66 @@ Na interface web (`transcreveai serve`), acesse `/search` para usar a busca sema
 - Gerar resposta com IA: chama o RAG completo e exibe a resposta sintetizada com as fontes
 
 A busca web usa o provider configurado em `VIDEO_KB_PROVIDER` (ou `openai` como fallback).
+
+---
+
+## Avaliacao (eval)
+
+O subcomando `eval` roda o pipeline completo em um conjunto de videos de referencia e compara providers lado a lado em qualidade, custo e latencia.
+
+> Nota de implementacao: esta secao acompanha o workflow de eval que esta sendo integrado. Antes de usar, confirme que o checkout atual expoe `transcreveai eval --help`. O provider `local` depende do extra `[local]`; providers remotos dependem das chaves e extras correspondentes.
+
+```bash
+# Smoke-test local, sem custo de API
+transcreveai eval --providers local
+
+# Comparar dois providers
+transcreveai eval --providers openai,gemini
+
+# Com dataset customizado
+transcreveai eval --dataset meus-videos.json --providers openai,gemini
+```
+
+Ao final, o harness grava em `eval-report/<timestamp>/`:
+
+- `report.md` - tabela de metricas por caso e por provider, resumo com medias e recomendacao de melhor custo-beneficio
+- `results.json` - dados brutos estruturados para automacoes e comparacoes historicas
+
+### Comparando providers (qualidade / custo / latencia)
+
+| Dimensao | O que o eval mede |
+|---|---|
+| Qualidade da transcricao | WER (Word Error Rate) contra ground-truth, quando disponivel no dataset |
+| Qualidade da sintese | Nota do judge LLM em cobertura, coerencia e utilidade (opcional, ver abaixo) |
+| Custo estimado | Estimativa heuristica em USD por run (Whisper + visao + sintese) |
+| Latencia | Tempo total de parede e por etapa (download, OCR, IA, persistencia) |
+| Completude estrutural | Contagem de capitulos, entidades, ferramentas, afirmacoes e itens de acao gerados |
+
+Use `--providers openai,gemini,local` para ver todos lado a lado no mesmo relatorio.
+
+### Judge opcional (LLM-as-judge)
+
+O flag `--judge PROVIDER` ativa avaliacao qualitativa da sintese gerada. O provider informado pontua cada sintese em tres criterios (0-10): cobertura de topicos, coerencia logica e utilidade das entidades e acoes extraidas.
+
+```bash
+transcreveai eval --providers openai,gemini --judge openai
+```
+
+O judge e desativado por padrao. Qualquer provider que suporte sintese pode ser usado como judge.
+
+### Atencao: o eval usa APIs reais (custo)
+
+Rodar `transcreveai eval` com providers pagos (`openai`, `gemini`, `anthropic`) faz chamadas reais as APIs e incorre em custo. O CLI exibe um aviso e pede confirmacao antes de iniciar. Para suprimir a confirmacao em CI/CD:
+
+```bash
+transcreveai eval --providers openai --no-cost-warning
+```
+
+Para estimar o custo antes de rodar: o dataset padrao tem ~4 min de video. Com `openai` em modo `full`, o custo tipico e em torno de $0.03 por provider. Com `--judge` ativado, adicione ~$0.01 por caso avaliado. Esses valores sao estimativas - consulte `video_kb/eval/cost_table.py` e os sites dos providers para precos atualizados.
+
+O provider `local` nao faz chamadas de rede e tem custo zero. E util para validar o harness e testar datasets sem gastar creditos de API.
+
+Consulte [docs/superpowers/specs/eval-harness-design.md](docs/superpowers/specs/eval-harness-design.md) para detalhes completos do design, formato do dataset e estrutura dos relatorios.
 
 ---
 
@@ -520,8 +613,13 @@ See [SECURITY.md](SECURITY.md).
 ## Development
 
 ```bash
+python -m ruff check video_kb tests
+python -m ruff check --select C90 video_kb tests  # warning while complexidade ainda está em estabilização
+python -m mypy video_kb tests  # warning enquanto erros de tipagem legado ainda existem
+python -m pytest --maxfail=1 --cov=video_kb --cov-report=term-missing --cov-report=xml:coverage.xml
 python -m unittest discover -s tests
 python -m compileall video_kb tests
+cd frontend && pnpm install --frozen-lockfile && pnpm lint && pnpm build
 ```
 
 Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) and [docs/OPEN_SOURCE_CHECKLIST.md](docs/OPEN_SOURCE_CHECKLIST.md).

@@ -107,7 +107,7 @@ class ObsidianBackendSave(unittest.TestCase):
 
         backend = ObsidianBackend(vault_path=str(self._vault))
         ref = backend.save(_make_result("run-obs-vault"), _make_artifacts(self._run_dir))  # type: ignore[arg-type]
-        self.assertTrue(ref.output_dir.startswith(str(self._vault)))
+        self.assertTrue(Path(ref.output_dir).is_relative_to(self._vault.resolve()))
 
     def test_save_frontmatter_contem_titulo(self) -> None:
         import frontmatter

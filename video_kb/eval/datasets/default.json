@@ -1,0 +1,23 @@
+{
+  "version": "1",
+  "description": "Dataset padrao com videos curtos publicos para smoke-test multi-provider",
+  "cases": [
+    {
+      "id": "bbb_trailer_60s",
+      "source": "https://www.youtube.com/watch?v=YE7VzlLtp-4",
+      "notes": "Big Buck Bunny trailer oficial ~60s, sem fala, bom para testar OCR e visao",
+      "ground_truth_transcript": ""
+    },
+    {
+      "id": "wikimedia_commons_short",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/transcoded/c/c0/Big_Buck_Bunny_4K.webm/Big_Buck_Bunny_4K.webm.360p.webm",
+      "notes": "Clip curto do Wikimedia Commons, ~30s, sem fala, dominio publico"
+    },
+    {
+      "id": "ted_ed_short",
+      "source": "https://www.youtube.com/watch?v=DnBmrJhhSt4",
+      "notes": "TED-Ed animacao curta ~3min com narrador em ingles, bom para testar transcricao e WER",
+      "ground_truth_transcript": "Have you ever wondered how language works? Every word you speak began as a thought..."
+    }
+  ]
+}

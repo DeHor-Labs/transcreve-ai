@@ -1,13 +1,52 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSubmitJob } from '../../hooks/useSubmitJob';
+import { useSourceProbe } from '../../hooks/useSourceProbe';
 import { isApiError } from '../../api/client';
 import { Button } from '../ui/Button';
 import { UrlInput } from './UrlInput';
 import { FileDropzone } from './FileDropzone';
+import type { SourceProbeResponse } from '../../api/types';
 
 type Tab = 'url' | 'file';
 type AiMode = 'auto' | 'off' | 'full';
 type Provider = 'openai' | 'gemini' | 'anthropic' | 'local';
+
+function isHttpUrl(value: string): boolean {
+  return value.startsWith('http://') || value.startsWith('https://');
+}
+
+function collectProbeWarnings(
+  probe: SourceProbeResponse | null,
+  probeRequestError: string | null,
+): string[] {
+  if (!probe && !probeRequestError) return [];
+
+  const warnings: string[] = [];
+
+  if (probe) {
+    const kind = probe.kind.toLowerCase();
+    const adapter = probe.adapter.toLowerCase();
+    const notes = probe.notes.join(' ').toLowerCase();
+
+    if (kind === 'unknown' || kind.includes('unknown')) {
+      warnings.push('Fonte desconhecida - envio continua pelo fluxo de fallback.');
+    }
+
+    if (probe.requires_cookies) {
+      warnings.push('Esta fonte pode exigir cookies ou autenticacao para extracao completa.');
+    }
+
+    if (adapter.includes('fallback') || notes.includes('fallback')) {
+      warnings.push('Fonte marcada para fallback automatico.');
+    }
+  }
+
+  if (probeRequestError) {
+    warnings.push(probeRequestError);
+  }
+
+  return warnings;
+}
 
 export function SubmitForm() {
   const [tab, setTab] = useState<Tab>('url');
@@ -17,13 +56,36 @@ export function SubmitForm() {
   const [provider, setProvider] = useState<Provider>('openai');
   const [language, setLanguage] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const { result: sourceProbe, isProbing: isProbingSource, error: sourceProbeError, probe: runSourceProbe, clear: clearSourceProbe } = useSourceProbe();
+  const isProbeMode = tab === 'url' && isHttpUrl(url);
 
   const submit = useSubmitJob();
 
+  useEffect(() => {
+    if (!isProbeMode) {
+      clearSourceProbe();
+      return;
+    }
+
+    clearSourceProbe();
+    const timer = window.setTimeout(() => {
+      void runSourceProbe(url);
+    }, 450);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [isProbeMode, tab, url, runSourceProbe, clearSourceProbe]);
+
   const isValid =
     tab === 'url'
-      ? url.startsWith('http://') || url.startsWith('https://')
+      ? isHttpUrl(url)
       : file !== null;
+
+  const probeWarnings = useMemo(
+    () => collectProbeWarnings(sourceProbe, sourceProbeError),
+    [sourceProbe, sourceProbeError],
+  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -89,6 +151,41 @@ export function SubmitForm() {
           <UrlInput value={url} onChange={setUrl} disabled={submit.isPending} />
         ) : (
           <FileDropzone file={file} onChange={setFile} disabled={submit.isPending} />
+        )}
+
+        {tab === 'url' && (isProbingSource || sourceProbe || sourceProbeError) && (
+          <div className="rounded-md border border-border bg-surface2 px-3 py-2 text-xs text-text-muted space-y-1">
+            {isProbingSource ? (
+              <p className="text-text-secondary">Verificando fonte...</p>
+            ) : (
+              <>
+                {sourceProbe && (
+                  <p className="text-text-secondary">
+                    Fonte: <span className="text-text-primary">{sourceProbe.adapter}</span>
+                    <span className="text-text-muted"> • </span>
+                    <span className="uppercase">{sourceProbe.kind}</span>
+                  </p>
+                )}
+
+                {(sourceProbe?.canonical || sourceProbe?.source) && (
+                  <p className="text-text-muted break-all">
+                    Canonical: {sourceProbe.canonical || sourceProbe.source}
+                  </p>
+                )}
+              </>
+            )}
+
+            {probeWarnings.length > 0 && (
+              <ul className="flex flex-col gap-1 pt-1 border-t border-border/80 mt-1.5">
+                {probeWarnings.map((note) => (
+                  <li key={note} className="flex items-start gap-1.5">
+                    <span className="text-status-failed font-heading font-bold">Aviso:</span>
+                    <span className="text-status-failed">{note}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
 
         {/* Opcoes avancadas */}

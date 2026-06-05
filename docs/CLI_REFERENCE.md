@@ -5,6 +5,8 @@
 | Comando | Descricao |
 |---|---|
 | `transcreveai analyze SOURCE` | Analisa um link ou arquivo de video |
+| `transcreveai sources probe SOURCE` | Inspeciona o tipo da fonte |
+| `transcreveai agent run SOURCE` | Executa o workflow de agente: probe, analyze e opcionalmente index/ask |
 | `transcreveai index [RUN_ID\|--all]` | Indexa runs para busca semantica (RAG) |
 | `transcreveai ask PERGUNTA` | Faz uma pergunta sobre os videos indexados |
 | `transcreveai serve` | Inicia o servidor web com API e SPA |
@@ -23,6 +25,47 @@ transcreveai [--index-db PATH] COMANDO
 | Flag | Descricao | Default |
 |---|---|---|
 | `--index-db PATH` | Path do banco SQLite de indice. Sobreescreve `VIDEO_KB_INDEX_DB`. | `~/.transcreveai/index.db` |
+
+---
+
+## `transcreveai agent run`
+
+Executa o caminho curto para agentes: faz `sources probe`, roda a analise e pode indexar o run e responder uma pergunta no mesmo comando.
+
+```bash
+transcreveai agent run SOURCE [opcoes]
+```
+
+### Exemplos
+
+```bash
+# Probe + analise + resposta estruturada em JSON
+transcreveai agent run "https://youtu.be/..." --ai auto --language pt --json
+
+# Analise e indexacao para RAG
+transcreveai agent run "https://youtu.be/..." --index --provider local
+
+# Analise, indexacao automatica e pergunta restrita ao run gerado
+transcreveai agent run "https://youtu.be/..." \
+  --question "quais ferramentas, passos e riscos aparecem no video?" \
+  --top-k 8
+```
+
+### Opcoes principais
+
+| Flag | Descricao | Default |
+|---|---|---|
+| `--json` | Emite resultado estruturado para agentes | `false` |
+| `--index` | Indexa o run apos a analise | `false` |
+| `--index-force` | Reindexa mesmo se ja houver embeddings | `false` |
+| `--question TEXT` | Faz uma pergunta apos analisar; implica indexacao | - |
+| `--top-k N` | Numero de trechos usados no RAG | `5` |
+| `--ai {auto,off,full}` | Modo de IA repassado ao pipeline | `auto` |
+| `--provider NOME` | Provider de IA/embedding | `openai` |
+| `--cookies-browser BROWSER` | Browser para cookies do yt-dlp | - |
+| `--force` | Reprocessa mesmo que a origem ja exista no indice | `false` |
+
+Se o probe retornar `unknown`, o comando imprime o resultado e encerra com codigo `1`.
 
 ---
 
@@ -101,6 +144,91 @@ transcreveai analyze "https://youtu.be/..." --force
 # Banco de indice customizado
 transcreveai --index-db ~/projetos/meu.db analyze "https://youtu.be/..."
 ```
+
+---
+
+## `transcreveai sources probe`
+
+Inspeciona uma entrada para identificar como ela sera tratada pelo downloader e quais avisos sao esperados.
+
+```bash
+transcreveai sources probe SOURCE [opcoes]
+```
+
+### Argumento
+
+- `SOURCE`: URL ou caminho local do video.
+
+### Opcoes
+
+| Flag | Descricao | Default |
+|---|---|---|
+| `--json` | Emite JSON no stdout com o resultado do probe. | `false` |
+
+### Exemplos
+
+```bash
+transcreveai sources probe "https://www.youtube.com/watch?v=abc123"
+transcreveai sources probe "https://www.instagram.com/reel/abc123/" --json
+transcreveai sources probe ./meu_video.mp4
+```
+
+### API equivalente (quando rodando `transcreveai serve`)
+
+Com o servidor web ativo, o pre-check também está disponível como:
+
+`POST /api/sources/probe`
+
+Por segurança, o endpoint web aceita apenas URLs `http://` ou `https://`. Para
+arquivos locais, use o CLI `transcreveai sources probe ./arquivo.mp4` ou o fluxo
+de upload da API, evitando expor caminhos absolutos do servidor.
+
+Payload:
+
+```json
+{
+  "source": "URL_DA_FONTE"
+}
+```
+
+Retorno (exemplo):
+
+```json
+{
+  "source": "URL_DA_FONTE",
+  "kind": "youtube",
+  "adapter": "youtube",
+  "is_url": true,
+  "canonical": "https://www.youtube.com/watch?v=abc123",
+  "requires_cookies": false,
+  "notes": ["..."]
+}
+```
+
+Erros esperados:
+- `422` com `{"error":"validation", ...}` quando `source` estiver ausente, não for texto ou vier vazio.
+- `422` quando `source` não for uma URL `http(s)`.
+- `200` com `SourceProbeResponse` quando válido.
+
+Exemplo com curl:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/sources/probe \
+  -H "Content-Type: application/json" \
+  -d '{"source":"https://www.youtube.com/watch?v=abc123"}'
+```
+
+Use esse endpoint para validar fonte/adapter/cookies antes de submeter `POST /api/jobs`, evitando custo desnecessário e jobs que falham no início.
+
+Campos retornados (JSON):
+
+- `source`: entrada original.
+- `kind`: categoria (`youtube`, `instagram_reel`, `tiktok`, `x_twitter`, `vimeo`, `loom`, `direct_media_url`, `generic_yt_dlp_url`, `local_file`, `unknown`).
+- `adapter`: adapter sugerido.
+- `is_url`: se foi tratado como URL.
+- `canonical`: representação canonical da origem.
+- `requires_cookies`: se geralmente exige autenticacao via cookies.
+- `notes`: observacoes sobre fallback e dicas de diagnostico.
 
 ---
 
@@ -191,7 +319,7 @@ transcreveai ask PERGUNTA [opcoes]
 |---|---|---|
 | `--provider NOME` | Provider de embedding e sintese: `openai`, `local` ou `gemini`. Sobreescreve `VIDEO_KB_PROVIDER`. | `openai` |
 | `--top-k N` | Numero de trechos de contexto a recuperar | `5` |
-| `--run-ids ID [ID...]` | Limita a busca a runs especificos | todos |
+| `--run-id ID` | Limita a busca a um run especifico; pode ser repetido | todos |
 | `--search-only` | Exibe apenas os trechos recuperados, sem chamar LLM para sintese | `false` |
 
 O `--index-db` global tambem e respeitado.
@@ -241,7 +369,8 @@ transcreveai ask "autenticacao" --search-only
 
 # Limitar a dois runs
 transcreveai ask "quais ferramentas foram mostradas?" \
-  --run-ids 20260601T060803Z-youtu-be-abc123 20260531T120000Z-video-mp4
+  --run-id 20260601T060803Z-youtu-be-abc123 \
+  --run-id 20260531T120000Z-video-mp4
 
 # Usar provider offline
 transcreveai ask "resumo dos capitulos" --provider local
@@ -412,6 +541,16 @@ O `--index-db` global tambem e respeitado:
 
 ```bash
 transcreveai --index-db ~/meu.db serve --port 8080
+```
+
+Para smoke tests de UI/API e demos de agente, prefira um banco temporario para
+nao misturar a prova com o historico real do usuario:
+
+```bash
+transcreveai --index-db /tmp/transcreveai-e2e.db serve \
+  --host 127.0.0.1 \
+  --port 8000 \
+  --out /tmp/transcreveai-e2e
 ```
 
 ### Comportamento

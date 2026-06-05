@@ -25,6 +25,7 @@ export function useJobEvents(
   const [done, setDone] = useState(false);
   const [failed, setFailed] = useState(false);
   const esRef = useRef<EventSource | null>(null);
+  const reconnectRef = useRef<() => void>(() => undefined);
 
   const connect = useCallback(() => {
     if (esRef.current) {
@@ -60,12 +61,16 @@ export function useJobEvents(
       if (!done && !failed) {
         setTimeout(() => {
           if (esRef.current?.readyState === EventSource.CLOSED) {
-            connect();
+            reconnectRef.current();
           }
         }, 2000);
       }
     };
   }, [jobId, done, failed]);
+
+  useEffect(() => {
+    reconnectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     if (!enabled) return;

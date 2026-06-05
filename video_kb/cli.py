@@ -4,11 +4,16 @@ import argparse
 import json
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .index import DuplicateRunError, RunIndex, resolve_index_path
 from .pipeline import PipelineOptions, VideoKnowledgePipeline
 from .utils import load_dotenv
+
+if TYPE_CHECKING:
+    from .sources import SourceProbe
 
 # ---------------------------------------------------------------------------
 # Parser
@@ -34,6 +39,93 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # ------------------------------------------------------------------
+    # sources
+    # ------------------------------------------------------------------
+    sources_parser = subparsers.add_parser("sources", help="Inspeciona tipos de fontes")
+    sources_sub = sources_parser.add_subparsers(dest="sources_command", required=True)
+
+    probe_parser = sources_sub.add_parser(
+        "probe",
+        help="Detecta o tipo de uma URL ou arquivo de origem.",
+    )
+    probe_parser.add_argument("source", help="URL ou caminho local do video")
+    probe_parser.add_argument(
+        "--json",
+        dest="as_json",
+        action="store_true",
+        help="Saida em JSON do probe.",
+    )
+
+    # ------------------------------------------------------------------
+    # agent
+    # ------------------------------------------------------------------
+    agent_parser = subparsers.add_parser(
+        "agent",
+        help="Workflows de video intelligence para agentes",
+    )
+    agent_sub = agent_parser.add_subparsers(dest="agent_command", required=True)
+
+    agent_run = agent_sub.add_parser(
+        "run",
+        help="Executa probe, analise e opcionalmente index/ask em uma origem.",
+    )
+    agent_run.add_argument("source", help="URL ou caminho local do video")
+    agent_run.add_argument("--out", default="outputs", help="Diretorio de saida")
+    agent_run.add_argument(
+        "--frame-interval", type=float, default=5.0, help="Intervalo entre frames em segundos"
+    )
+    agent_run.add_argument(
+        "--max-frames", type=int, default=80, help="Maximo de frames locais (0 = sem limite)"
+    )
+    agent_run.add_argument(
+        "--visual-limit", type=int, default=30, help="Maximo de frames enviados para visao por IA"
+    )
+    agent_run.add_argument(
+        "--ai",
+        choices=["auto", "off", "full"],
+        default="auto",
+        help="auto usa IA se a chave de API do provider estiver definida",
+    )
+    agent_run.add_argument("--vision-model", default="", help="Modelo de visao/sintese")
+    agent_run.add_argument("--transcribe-model", default="", help="Modelo de transcricao")
+    agent_run.add_argument("--language", default=None, help="Idioma do audio, ex: pt, en")
+    agent_run.add_argument("--tesseract-lang", default="por+eng", help="Idioma OCR desejado")
+    agent_run.add_argument(
+        "--cookies-browser", default=None, help="Browser para cookies do yt-dlp, ex: chrome"
+    )
+    agent_run.add_argument("--cookies", default=None, help="Arquivo cookies.txt para yt-dlp")
+    agent_run.add_argument("--format", default="bv*+ba/b", help="Formato yt-dlp")
+    agent_run.add_argument(
+        "--provider",
+        default="",
+        metavar="NOME",
+        help="Provider de IA/embedding: openai, local, gemini, anthropic ou externo.",
+    )
+    agent_run.add_argument("--storage", default="", metavar="NOME", help="Backend de armazenamento")
+    agent_run.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Reprocessa mesmo que a origem ja exista no indice.",
+    )
+    agent_run.add_argument(
+        "--index",
+        dest="should_index",
+        action="store_true",
+        default=False,
+        help="Indexa o run apos a analise para RAG.",
+    )
+    agent_run.add_argument(
+        "--index-force",
+        action="store_true",
+        default=False,
+        help="Reindexa o run mesmo que ja existam embeddings.",
+    )
+    agent_run.add_argument("--question", default=None, help="Pergunta a responder apos indexar")
+    agent_run.add_argument("--top-k", type=int, default=5, help="Numero de trechos para RAG")
+    agent_run.add_argument("--json", dest="as_json", action="store_true", help="Saida JSON")
 
     # ------------------------------------------------------------------
     # analyze
@@ -205,6 +297,56 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # ------------------------------------------------------------------
+    # eval
+    # ------------------------------------------------------------------
+    eval_parser = subparsers.add_parser(
+        "eval",
+        help="Roda avaliacao comparativa de providers",
+    )
+    eval_parser.add_argument(
+        "--dataset",
+        default=None,
+        metavar="PATH",
+        help="JSON de dataset customizado",
+    )
+    eval_parser.add_argument(
+        "--providers",
+        default="",
+        metavar="LISTA",
+        help="Providers separados por virgula, ex: openai,gemini,local",
+    )
+    eval_parser.add_argument(
+        "--judge",
+        default=None,
+        metavar="PROVIDER",
+        help="Ativa LLM-as-judge com o provider informado",
+    )
+    eval_parser.add_argument(
+        "--ai-mode",
+        choices=["auto", "full", "off"],
+        default="full",
+        help="Modo de IA repassado ao pipeline",
+    )
+    eval_parser.add_argument(
+        "--out",
+        default=None,
+        metavar="DIR",
+        help="Diretorio de saida do relatorio",
+    )
+    eval_parser.add_argument(
+        "--json",
+        dest="as_json",
+        action="store_true",
+        help="Imprime results.json no stdout alem de salvar em disco",
+    )
+    eval_parser.add_argument(
+        "--no-cost-warning",
+        action="store_true",
+        default=False,
+        help="Suprime confirmacao interativa de custo",
+    )
+
+    # ------------------------------------------------------------------
     # serve
     # ------------------------------------------------------------------
     serve_parser = subparsers.add_parser("serve", help="Inicia o servidor web TranscreveAI")
@@ -222,7 +364,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     return parser
-
 
 # ---------------------------------------------------------------------------
 # main
@@ -242,6 +383,8 @@ def main() -> None:
         _cmd_index(args)
     elif args.command == "ask":
         _cmd_ask(args)
+    elif args.command == "eval":
+        _cmd_eval(args)
     elif args.command == "runs":
         if args.runs_command == "list":
             _cmd_runs_list(args)
@@ -249,11 +392,204 @@ def main() -> None:
             _cmd_runs_show(args)
         elif args.runs_command == "rm":
             _cmd_runs_rm(args)
+    elif args.command == "sources":
+        if args.sources_command == "probe":
+            _cmd_sources_probe(args)
+    elif args.command == "agent":
+        if args.agent_command == "run":
+            _cmd_agent_run(args)
 
 
 # ---------------------------------------------------------------------------
 # Implementacoes dos comandos
 # ---------------------------------------------------------------------------
+
+
+def _source_probe_message(probe: SourceProbe) -> str:
+    from .sources import needs_cookie_message
+
+    lines = [
+        f"Origem: {probe.source}",
+        f"Tipo: {probe.kind}",
+        f"Adapter: {probe.adapter}",
+        f"URL: {'Sim' if probe.is_url else 'Nao'}",
+        f"Canonical: {probe.canonical}",
+    ]
+
+    if probe.notes:
+        lines.append("Observacoes:")
+        lines.extend(f" - {note}" for note in probe.notes)
+
+    if probe.requires_cookies:
+        cookie_msg = needs_cookie_message(probe)
+        if cookie_msg:
+            lines.append(f"Cookies: {cookie_msg}")
+        else:
+            lines.append("Cookies: provavelmente necessario para esta fonte.")
+
+    if probe.kind == "generic_yt_dlp_url":
+        lines.append(
+            "Fallback: sem adapter dedicado; sera usado parser generico do yt-dlp."
+        )
+    return "\n".join(lines)
+
+
+def _cmd_sources_probe(args: argparse.Namespace) -> None:
+    from .sources import detect_source
+
+    try:
+        probe = detect_source(args.source)
+    except ValueError as exc:
+        print(f"Erro: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.as_json:
+        print(json.dumps(probe.to_dict(), ensure_ascii=False, indent=2))
+        return
+
+    print(_source_probe_message(probe))
+
+
+def _cmd_agent_run(args: argparse.Namespace) -> None:
+    import contextlib
+    import io
+
+    from .agent_workflow import AgentWorkflowOptions, dumps_agent_result, run_agent_workflow
+
+    options = AgentWorkflowOptions(
+        out_dir=Path(args.out),
+        frame_interval=args.frame_interval,
+        max_frames=args.max_frames,
+        visual_limit=args.visual_limit,
+        ai_mode=args.ai,
+        vision_model=args.vision_model,
+        transcribe_model=args.transcribe_model,
+        language=args.language,
+        tesseract_lang=args.tesseract_lang,
+        cookies_browser=args.cookies_browser,
+        cookies=args.cookies,
+        video_format=args.format,
+        provider_name=args.provider,
+        storage_backend=args.storage,
+        force=args.force,
+        index_db=getattr(args, "index_db", None),
+        should_index=args.should_index,
+        question=args.question,
+        top_k=args.top_k,
+        index_force=args.index_force,
+    )
+    if args.as_json:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            result = run_agent_workflow(args.source, options)
+    else:
+        result = run_agent_workflow(args.source, options)
+    has_artifact = bool(result.analysis_path and Path(result.analysis_path).exists())
+    question_failed = bool(args.question and not result.answer)
+
+    if args.as_json:
+        print(dumps_agent_result(result))
+        if not result.run_id or not has_artifact or question_failed:
+            sys.exit(1)
+        return
+
+    print(f"Fonte: {result.source}")
+    print(f"Tipo: {result.probe.kind}")
+    print(f"Adapter: {result.probe.adapter}")
+    if result.probe.requires_cookies:
+        print("Cookies: esta fonte pode exigir cookies/autenticacao.")
+    if result.run_id:
+        print(f"Run: {result.run_id}")
+        print(f"Diretorio: {result.workdir}")
+        print(f"Markdown: {result.markdown_path}")
+        print(f"JSON: {result.analysis_path}")
+    if result.reused_existing:
+        print("Reuso: run existente reutilizado.")
+    if result.indexed:
+        print(f"Index: ok ({result.indexed_chunks} chunks novos).")
+    if result.question:
+        print(f"\nPergunta: {result.question}\n")
+        print(f"Resposta:\n{result.answer or ''}")
+    if result.sources:
+        print("\nFontes:")
+        for i, hit in enumerate(result.sources, start=1):
+            score = hit.get("score")
+            score_pct = f"{float(score) * 100:.1f}%" if isinstance(score, (int, float)) else "?"
+            title = hit.get("title") or hit.get("run_id") or "fonte"
+            print(f"  [{i}] {title} - score: {score_pct}")
+    if result.warnings:
+        print("\nAvisos:")
+        for warning in result.warnings:
+            print(f" - {warning}")
+    if not result.run_id or not has_artifact or question_failed:
+        sys.exit(1)
+
+
+def _cmd_eval(args: argparse.Namespace) -> None:
+    try:
+        from .eval.report_writer import write_report
+        from .eval.runner import EvalRunner, load_dataset
+    except ImportError as exc:
+        print(f"Dependencias de eval ausentes: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    dataset_path = Path(args.dataset) if args.dataset else _default_eval_dataset_path()
+    out_dir = Path(args.out) if args.out else _default_eval_out_dir()
+    providers = _resolve_eval_providers(args.providers)
+    judge_provider = args.judge.strip() if args.judge and args.judge.strip() else None
+
+    _confirm_eval_cost_if_needed(
+        providers=providers,
+        judge_provider=judge_provider,
+        no_cost_warning=args.no_cost_warning,
+    )
+
+    try:
+        dataset = load_dataset(dataset_path)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Erro ao carregar dataset '{dataset_path}': {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    progress_stream = sys.stderr if args.as_json else sys.stdout
+
+    def _progress(msg: str) -> None:
+        print(msg, file=progress_stream)
+
+    runner = EvalRunner(
+        dataset=dataset,
+        providers=providers,
+        out_dir=out_dir,
+        ai_mode=args.ai_mode,
+        judge_provider=judge_provider,
+        on_progress=_progress,
+    )
+
+    try:
+        results = runner.run()
+    except Exception as exc:  # noqa: BLE001
+        print(f"Erro ao executar eval: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        report_path, results_path = write_report(
+            results=results,
+            out_dir=out_dir,
+            dataset_path=str(dataset_path),
+            judge_provider=judge_provider,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"Erro ao escrever relatorio: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.as_json:
+        print(json.dumps(results, ensure_ascii=False, indent=2))
+        print(f"Report: {report_path}", file=sys.stderr)
+        print(f"JSON: {results_path}", file=sys.stderr)
+        return
+
+    print("")
+    print(f"OK: {out_dir}")
+    print(f"Report: {report_path}")
+    print(f"JSON: {results_path}")
 
 
 def _cmd_serve(args: argparse.Namespace) -> None:
@@ -634,3 +970,72 @@ def _get_embed_model(provider: object, provider_name: str) -> str:
         "gemini": "text-embedding-004",
     }
     return defaults.get(provider_name, "unknown")
+
+
+# ---------------------------------------------------------------------------
+# Helper: eval
+# ---------------------------------------------------------------------------
+
+
+def _default_eval_dataset_path() -> Path:
+    return Path(__file__).parent / "eval" / "datasets" / "default.json"
+
+
+def _default_eval_out_dir() -> Path:
+    return Path("eval-report") / datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def _resolve_eval_providers(raw_providers: str) -> list[str]:
+    if raw_providers.strip():
+        providers = [part.strip() for part in raw_providers.split(",") if part.strip()]
+    else:
+        from .providers import resolve_provider_name
+
+        providers = [resolve_provider_name(None)]
+
+    if not providers:
+        print("Erro: informe ao menos um provider em --providers.", file=sys.stderr)
+        sys.exit(1)
+    return providers
+
+
+def _is_paid_eval_provider(provider_name: str) -> bool:
+    # Local e o unico provider explicitamente sem custo. Providers externos ou
+    # desconhecidos podem chamar APIs remotas, entao pedem confirmacao.
+    return provider_name.strip().lower() != "local"
+
+
+def _paid_eval_targets(providers: list[str], judge_provider: str | None) -> list[str]:
+    targets = [p for p in providers if _is_paid_eval_provider(p)]
+    if judge_provider and _is_paid_eval_provider(judge_provider):
+        targets.append(f"judge:{judge_provider}")
+    return targets
+
+
+def _confirm_eval_cost_if_needed(
+    providers: list[str],
+    judge_provider: str | None,
+    no_cost_warning: bool,
+) -> None:
+    if no_cost_warning:
+        return
+
+    paid_targets = _paid_eval_targets(providers, judge_provider)
+    if not paid_targets:
+        return
+
+    print(
+        "Atencao: este eval pode fazer chamadas reais a APIs pagas.",
+        file=sys.stderr,
+    )
+    print(f"Providers com possivel custo: {', '.join(paid_targets)}", file=sys.stderr)
+
+    try:
+        resposta = input("Continuar? [s/N] ").strip().lower()
+    except EOFError:
+        print("Cancelado: confirmacao de custo nao recebida.", file=sys.stderr)
+        sys.exit(1)
+
+    if resposta not in ("s", "sim", "y", "yes"):
+        print("Cancelado.")
+        sys.exit(0)

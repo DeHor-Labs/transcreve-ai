@@ -72,6 +72,16 @@ class ErrorResponse(BaseModel):
     message: str
 
 
+class SourceProbeResponse(BaseModel):
+    source: str
+    kind: str
+    adapter: str
+    is_url: bool
+    canonical: str
+    requires_cookies: bool
+    notes: list[str]
+
+
 # ---------------------------------------------------------------------------
 # Schemas de busca semantica (RAG)
 # ---------------------------------------------------------------------------

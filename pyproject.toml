@@ -82,12 +82,22 @@ video-kb = "video_kb.cli:main"
 [tool.setuptools.packages.find]
 include = ["video_kb*"]
 
+[tool.setuptools.package-data]
+"video_kb.eval" = ["datasets/*.json", "datasets/*.txt"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py39"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--maxfail=1", "--disable-warnings", "-ra"]
 
 [tool.mypy]
 ignore_missing_imports = true
