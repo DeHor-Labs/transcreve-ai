@@ -50,7 +50,6 @@ jobs:
             --cov-report=xml:coverage.xml
 
   frontend:
-    if: ${{ hashFiles('frontend/package.json') != '' }}
     runs-on: ubuntu-latest
     needs: test
     steps:
