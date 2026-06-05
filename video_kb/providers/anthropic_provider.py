@@ -198,6 +198,18 @@ class AnthropicProvider(AIProvider):
             return "{}"
         return getattr(block, "text", "") or "{}"
 
+    def _complete(self, prompt: str) -> str:
+        client = self._get_client()
+        response = client.messages.create(
+            model=self.model,
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        block = response.content[0] if response.content else None
+        if block is None:
+            return ""
+        return getattr(block, "text", "") or ""
+
     # ------------------------------------------------------------------
     # embed - nao suportado
     # ------------------------------------------------------------------

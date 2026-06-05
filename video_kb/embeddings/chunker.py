@@ -152,9 +152,26 @@ def chunk_dossier(
 
 
 def _coerce_finite_float(value: Any) -> float | None:
-    """Converte para float e retorna apenas se o valor for finito."""
+    """Converte segundos numericos ou timestamps HH:MM:SS / MM:SS."""
     if value is None:
         return None
+    if isinstance(value, str):
+        raw = value.strip().replace(",", ".")
+        if ":" in raw:
+            parts = raw.split(":")
+            if not 2 <= len(parts) <= 3:
+                return None
+            try:
+                numbers = [float(part) for part in parts]
+            except ValueError:
+                return None
+            if len(numbers) == 2:
+                minutes, seconds = numbers
+                candidate = minutes * 60 + seconds
+            else:
+                hours, minutes, seconds = numbers
+                candidate = hours * 3600 + minutes * 60 + seconds
+            return candidate if math.isfinite(candidate) else None
     try:
         candidate = float(value)
     except (TypeError, ValueError):

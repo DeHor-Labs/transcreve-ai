@@ -52,16 +52,11 @@ reviews:
         quando evitar CI pesado em docs-only fizer sentido.
 
   path_filters:
-    # Keep automated review focused on production code. Large platform PRs in this
-    # repo include docs, fixtures, generated locks, and broad regression suites;
-    # CI/Codex validate those, while CodeRabbit should spend time on runtime risk.
+    # Keep generated and bulky artifacts out of review without shadowing
+    # path_instructions for runtime code, frontend, eval modules, or tests.
     - "!README.md"
     - "!docs/**"
     - "!skills/**"
-    - "!tests/**"
-    - "!frontend/**"
-    - "!video_kb/eval/**"
-    - "!**/*.json"
     - "!**/*.txt"
     - "!**/node_modules/**"
     - "!**/.venv/**"

@@ -203,6 +203,16 @@ class OpenAIProvider(AIProvider):
         )
         return response.choices[0].message.content or "{}"
 
+    def _complete(self, prompt: str) -> str:
+        client = self._get_client()
+        response = client.chat.completions.create(
+            model=self.vision_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            max_tokens=1024,
+        )
+        return response.choices[0].message.content or ""
+
     # ------------------------------------------------------------------
     # embed
     # ------------------------------------------------------------------

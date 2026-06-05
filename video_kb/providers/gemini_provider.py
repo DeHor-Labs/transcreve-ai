@@ -118,13 +118,14 @@ class GeminiProvider(AIProvider):
         )
 
         model = genai.GenerativeModel(self.model)
-        response = model.generate_content([prompt, audio_file])
-
-        # Remove o arquivo temporario da Files API apos uso
         try:
-            genai.delete_file(audio_file.name)
-        except Exception:  # noqa: BLE001
-            pass
+            response = model.generate_content([prompt, audio_file])
+        finally:
+            # Remove o arquivo temporario da Files API apos uso, mesmo em falha.
+            try:
+                genai.delete_file(audio_file.name)
+            except Exception:  # noqa: BLE001
+                pass
 
         text = (response.text or "").strip()
         segments: list[TranscriptSegment] = []
@@ -205,6 +206,12 @@ class GeminiProvider(AIProvider):
             questions=normalize_items(parsed.get("questions")),
             raw=parsed if parsed else {"raw_text": text},
         )
+
+    def _complete(self, prompt: str) -> str:
+        genai = self._get_genai()
+        model = genai.GenerativeModel(self.model)
+        response = model.generate_content(prompt)
+        return (response.text or "").strip()
 
     # ------------------------------------------------------------------
     # embed

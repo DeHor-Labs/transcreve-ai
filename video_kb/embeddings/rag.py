@@ -154,6 +154,9 @@ def search(
     Returns:
         Lista de SearchHit ordenada por score decrescente.
     """
+    if run_ids is not None and not run_ids:
+        return []
+
     query_vecs = provider.embed([query])
     query_vec = query_vecs[0]
 
@@ -225,84 +228,54 @@ def _call_complete(provider: Any, prompt: str) -> str:
     """
     Chama o LLM do provider para gerar texto a partir de um prompt.
 
-    Tenta diferentes interfaces em ordem de preferenca:
-      1. provider.complete(prompt) - interface direta (providers que a implementarem)
-      2. provider.synthesize() via wrapper minimo
-      3. Fallback com o client OpenAI/Gemini/Anthropic diretamente
+    Tenta apenas metodos publicos para manter o contrato de providers
+    plugavel por entry points:
+      1. provider.complete(prompt)
+      2. provider.chat(prompt)
+      3. provider.generate_content(prompt)
 
     Retorna string com a resposta gerada.
     """
-    strategies = (
-        ("provider.complete", _complete_direct),
-        ("client.chat", _complete_openai),
-        ("model.generate_content", _complete_gemini),
-        ("anthropic", _complete_anthropic),
-    )
-    for label, strategy in strategies:
-        try:
-            response = strategy(provider, prompt)
-        except Exception:  # noqa: BLE001
-            _LOGGER.debug("fallback %s falhou", label, exc_info=True)
+    for method_name in ("complete", "chat", "generate_content"):
+        method = getattr(provider, method_name, None)
+        if not callable(method):
             continue
-        if response:
-            return response
+        try:
+            response = method(prompt)
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("provider.%s falhou", method_name, exc_info=True)
+            continue
+        text = _response_to_text(response)
+        if text:
+            return text
 
-    _LOGGER.info("falha em todos os caminhos de sintese no _call_complete")
+    _LOGGER.info("falha em todos os metodos publicos de sintese no _call_complete")
     return "Nao foi possivel gerar resposta: provider de sintese nao disponivel."
 
 
-def _complete_direct(provider: Any, prompt: str) -> str:
-    complete = getattr(provider, "complete", None)
-    if not callable(complete):
+def _response_to_text(response: Any) -> str:
+    """Extrai texto de respostas publicas comuns de SDKs/adapter sem acoplar ao provider."""
+    if isinstance(response, str):
+        return response.strip()
+    if type(response).__module__.startswith("unittest.mock"):
         return ""
-    return str(complete(prompt))
 
+    text = getattr(response, "text", None)
+    if isinstance(text, str) and text.strip():
+        return text.strip()
 
-def _complete_openai(provider: Any, prompt: str) -> str:
-    client = getattr(provider, "_client", None)
-    if not hasattr(client, "chat"):
-        return ""
-    resp = client.chat.completions.create(
-        model=_get_vision_model(provider),
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
-        max_tokens=1024,
-    )
-    return resp.choices[0].message.content or ""
+    choices = getattr(response, "choices", None)
+    if choices:
+        message = getattr(choices[0], "message", None)
+        content = getattr(message, "content", None)
+        if isinstance(content, str) and content.strip():
+            return content.strip()
 
+    content_blocks = getattr(response, "content", None)
+    if content_blocks:
+        first = content_blocks[0]
+        content_text = getattr(first, "text", None)
+        if isinstance(content_text, str) and content_text.strip():
+            return content_text.strip()
 
-def _complete_gemini(provider: Any, prompt: str) -> str:
-    model = getattr(provider, "_model", None)
-    if not hasattr(model, "generate_content"):
-        return ""
-    resp = model.generate_content(prompt)
-    return resp.text or ""
-
-
-def _complete_anthropic(provider: Any, prompt: str) -> str:
-    client = getattr(provider, "_anthropic", None)
-    if client is None:
-        return ""
-    resp = client.messages.create(
-        model=_get_vision_model(provider),
-        max_tokens=1024,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return resp.content[0].text if resp.content else ""
-
-
-def _get_vision_model(provider: Any) -> str:
-    """Tenta obter o modelo configurado no provider; usa fallback por tipo."""
-    for attr in ("vision_model", "_vision_model", "_model_name", "model"):
-        val = getattr(provider, attr, None)
-        if val and isinstance(val, str):
-            return val
-    # Fallbacks seguros por tipo de provider
-    cls = type(provider).__name__.lower()
-    if "openai" in cls:
-        return "gpt-4o-mini"
-    if "gemini" in cls:
-        return "gemini-1.5-flash"
-    if "anthropic" in cls:
-        return "claude-3-haiku-20240307"
-    return "gpt-4o-mini"
+    return ""

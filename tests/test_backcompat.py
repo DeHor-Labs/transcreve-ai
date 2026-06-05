@@ -10,6 +10,7 @@ Cobre:
 from __future__ import annotations
 
 import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -118,6 +119,42 @@ class AiOffDegradadaLocal(unittest.TestCase):
 
         synth = _local_synthesis(result)
         self.assertIsInstance(synth, KnowledgeSynthesis)
+
+
+class RunIdSeguro(unittest.TestCase):
+    def test_resolve_run_id_gera_id_quando_nao_informado(self) -> None:
+        from video_kb.pipeline import _resolve_run_id
+
+        run_id = _resolve_run_id("https://example.com/video legal", "")
+
+        self.assertRegex(run_id, r"^\d{8}T\d{6}Z-example-com-video-legal$")
+
+    def test_resolve_run_id_aceita_id_explicito_simples(self) -> None:
+        from video_kb.pipeline import _resolve_run_id
+
+        self.assertEqual(_resolve_run_id("source.mp4", "run_ABC-123"), "run_ABC-123")
+
+    def test_resolve_run_id_rejeita_path_traversal(self) -> None:
+        from video_kb.pipeline import _resolve_run_id
+
+        with self.assertRaises(ValueError):
+            _resolve_run_id("source.mp4", "../evil")
+
+    def test_resolve_run_id_rejeita_absoluto(self) -> None:
+        from video_kb.pipeline import _resolve_run_id
+
+        with self.assertRaises(ValueError):
+            _resolve_run_id("source.mp4", "/tmp/evil")
+
+    def test_resolve_run_dir_garante_out_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            from video_kb.pipeline import _resolve_run_dir
+
+            out_dir = Path(tmp) / "outputs"
+            run_dir = _resolve_run_dir(out_dir, "run-001")
+
+            self.assertTrue(run_dir.is_relative_to(out_dir.resolve()))
+            self.assertTrue(run_dir.exists())
 
 
 class ReexportCompatibilidade(unittest.TestCase):

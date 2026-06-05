@@ -248,8 +248,8 @@ class EmbeddingStore:
 
         conn = self._connect()
 
-        if run_ids == []:
-            run_ids = None
+        if run_ids is not None and not run_ids:
+            return []
 
         if run_ids is not None:
             placeholders = ",".join("?" * len(run_ids))

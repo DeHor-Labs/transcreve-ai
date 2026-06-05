@@ -161,6 +161,33 @@ class TestChunkDossier(unittest.TestCase):
         cap = next(c for c in chunks if c.chunk_type == "chapter")
         self.assertAlmostEqual(cap.chapter_start, 42.5)
 
+    def test_chapter_start_aceita_timestamp_mm_ss(self) -> None:
+        from video_kb.embeddings.chunker import chunk_dossier
+
+        chapters = [{"title": "Cap", "notes": "notas", "start": "01:02,5"}]
+        analysis = _make_analysis(chapters=chapters)
+        chunks = chunk_dossier(analysis, "run-001")
+        cap = next(c for c in chunks if c.chunk_type == "chapter")
+        self.assertAlmostEqual(cap.chapter_start, 62.5)
+
+    def test_chapter_start_aceita_timestamp_hh_mm_ss(self) -> None:
+        from video_kb.embeddings.chunker import chunk_dossier
+
+        chapters = [{"title": "Cap", "notes": "notas", "start": "01:02:03.5"}]
+        analysis = _make_analysis(chapters=chapters)
+        chunks = chunk_dossier(analysis, "run-001")
+        cap = next(c for c in chunks if c.chunk_type == "chapter")
+        self.assertAlmostEqual(cap.chapter_start, 3723.5)
+
+    def test_chapter_start_timestamp_invalido_nao_e_inserido(self) -> None:
+        from video_kb.embeddings.chunker import chunk_dossier
+
+        chapters = [{"title": "Cap", "notes": "notas", "start": "01:02:03:04"}]
+        analysis = _make_analysis(chapters=chapters)
+        chunks = chunk_dossier(analysis, "run-001")
+        cap = next(c for c in chunks if c.chunk_type == "chapter")
+        self.assertIsNone(cap.chapter_start)
+
     def test_chapter_start_nao_finito_nao_e_inserido(self) -> None:
         from video_kb.embeddings.chunker import chunk_dossier
 
@@ -372,7 +399,7 @@ class TestSearchRetrieval(unittest.TestCase):
         self.assertNotIn("run-B", run_ids_nos_hits)
         self.assertIn("run-A", run_ids_nos_hits)
 
-    def test_search_run_ids_vazio_nao_filtra(self) -> None:
+    def test_search_run_ids_vazio_retorna_lista_vazia(self) -> None:
         from video_kb.embeddings.rag import index_run, search
 
         provider = _make_mock_provider(dim=4)
@@ -388,11 +415,18 @@ class TestSearchRetrieval(unittest.TestCase):
                 db_path=db,
             )
 
-        all_hits = search("Resumo", provider, db_path=db, top_k=10)
         empty_filter_hits = search("Resumo", provider, db_path=db, top_k=10, run_ids=[])
 
-        self.assertEqual(len(all_hits), len(empty_filter_hits))
-        self.assertEqual({h.run_id for h in all_hits}, {h.run_id for h in empty_filter_hits})
+        self.assertEqual(empty_filter_hits, [])
+
+    def test_search_run_ids_vazio_nao_chama_embed(self) -> None:
+        from video_kb.embeddings.rag import search
+
+        provider = MagicMock()
+        hits = search("Resumo", provider, db_path=_tmp_db(), top_k=10, run_ids=[])
+
+        self.assertEqual(hits, [])
+        provider.embed.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -570,29 +604,56 @@ class TestAskFunction(unittest.TestCase):
 
 
 class TestCallCompleteFallback(unittest.TestCase):
-    def test_call_complete_fallback_para_openai(self) -> None:
+    def test_call_complete_usa_complete_publico(self) -> None:
+        from video_kb.embeddings.rag import _call_complete
+
+        provider = MagicMock()
+        provider.complete.return_value = "resposta direta"
+
+        out = _call_complete(provider, "pergunta")
+        self.assertEqual(out, "resposta direta")
+
+    def test_call_complete_fallback_para_chat_publico(self) -> None:
         from types import SimpleNamespace
 
         from video_kb.embeddings.rag import _call_complete
 
         provider = MagicMock()
         provider.complete.side_effect = RuntimeError("provider down")
-        provider._client = SimpleNamespace(
-            chat=SimpleNamespace(
-                completions=SimpleNamespace(
-                    create=MagicMock(
-                        return_value=SimpleNamespace(
-                            choices=[
-                                SimpleNamespace(message=SimpleNamespace(content="resp da api"))
-                            ]
-                        )
+        provider.chat.return_value = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content="resp da api",
                     )
                 )
-            )
+            ]
         )
 
         out = _call_complete(provider, "pergunta")
         self.assertEqual(out, "resp da api")
+
+    def test_call_complete_fallback_para_generate_content_publico(self) -> None:
+        from types import SimpleNamespace
+
+        from video_kb.embeddings.rag import _call_complete
+
+        provider = MagicMock()
+        provider.complete.side_effect = RuntimeError("provider down")
+        provider.chat.side_effect = RuntimeError("chat down")
+        provider.generate_content.return_value = SimpleNamespace(text="resp gemini")
+
+        out = _call_complete(provider, "pergunta")
+        self.assertEqual(out, "resp gemini")
+
+    def test_call_complete_sem_metodo_publico_retorna_fallback(self) -> None:
+        from video_kb.embeddings.rag import _call_complete
+
+        class ProviderSemComplete:
+            pass
+
+        out = _call_complete(ProviderSemComplete(), "pergunta")
+        self.assertIn("Nao foi possivel", out)
 
 
 if __name__ == "__main__":

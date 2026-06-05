@@ -136,6 +136,19 @@ class AIProvider(ABC):
     def _synthesize(self, ctx: SynthesisContext) -> KnowledgeSynthesis:
         raise CapabilityNotSupported(self.__class__.__name__, "synthesize")
 
+    def complete(self, prompt: str) -> str:
+        """
+        Gera texto livre para fluxos RAG/agent a partir de um prompt.
+
+        Providers que suportam "synthesize" podem expor este metodo publico
+        para evitar que consumidores dependam de clientes SDK privados.
+        """
+        self._require("synthesize")
+        return self._complete(prompt)
+
+    def _complete(self, prompt: str) -> str:
+        raise CapabilityNotSupported(self.__class__.__name__, "synthesize")
+
     # ------------------------------------------------------------------
     # embed
     # ------------------------------------------------------------------

@@ -132,6 +132,21 @@ class OpenAICapabilities(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0], [0.1, 0.2, 0.3])
 
+    def test_complete_publico_retorna_texto(self) -> None:
+        mock_client = MagicMock()
+        mock_message = MagicMock()
+        mock_message.content = "resposta aberta"
+        mock_client.chat.completions.create.return_value = MagicMock(
+            choices=[MagicMock(message=mock_message)]
+        )
+        self.provider._client = mock_client
+
+        result = self.provider.complete("pergunta")
+
+        self.assertEqual(result, "resposta aberta")
+        kwargs = mock_client.chat.completions.create.call_args.kwargs
+        self.assertNotIn("response_format", kwargs)
+
 
 # ---------------------------------------------------------------------------
 # Local
@@ -256,6 +271,34 @@ class GeminiCapabilities(unittest.TestCase):
         self.assertEqual(len(result), 2)
         self.assertEqual(result[0], [0.5, 0.6, 0.7])
 
+    def test_complete_publico_retorna_texto(self) -> None:
+        mock_genai = MagicMock()
+        mock_model_instance = MagicMock()
+        mock_model_instance.generate_content.return_value = MagicMock(text="resposta gemini")
+        mock_genai.GenerativeModel.return_value = mock_model_instance
+        self.provider._genai = mock_genai
+
+        result = self.provider.complete("pergunta")
+
+        self.assertEqual(result, "resposta gemini")
+        mock_model_instance.generate_content.assert_called_once_with("pergunta")
+
+    def test_transcribe_chunk_limpa_upload_mesmo_quando_generate_content_falha(self) -> None:
+        mock_genai = MagicMock()
+        mock_audio_file = MagicMock()
+        mock_audio_file.name = "files/audio-123"
+        mock_genai.upload_file.return_value = mock_audio_file
+        mock_model_instance = MagicMock()
+        mock_model_instance.generate_content.side_effect = RuntimeError("api down")
+        mock_genai.GenerativeModel.return_value = mock_model_instance
+        self.provider._genai = mock_genai
+
+        with tempfile.NamedTemporaryFile(suffix=".mp3") as tmp:
+            with self.assertRaises(RuntimeError):
+                self.provider._transcribe_chunk(Path(tmp.name), 0.0, None)
+
+        mock_genai.delete_file.assert_called_once_with("files/audio-123")
+
 
 # ---------------------------------------------------------------------------
 # Anthropic
@@ -329,6 +372,19 @@ class AnthropicCapabilities(unittest.TestCase):
             )
         self.assertEqual(result, "descricao do frame")
 
+    def test_complete_publico_retorna_texto(self) -> None:
+        provider = AnthropicProvider()
+        mock_client = MagicMock()
+        mock_block = MagicMock()
+        mock_block.text = "resposta anthropic"
+        mock_client.messages.create.return_value = MagicMock(content=[mock_block])
+        provider._client = mock_client
+
+        result = provider.complete("pergunta")
+
+        self.assertEqual(result, "resposta anthropic")
+        mock_client.messages.create.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
 # Matriz cruzada - assegura consistencia via _require()
@@ -352,6 +408,11 @@ class CapabilityRequireGuard(unittest.TestCase):
         provider = AnthropicProvider()
         with self.assertRaises(CapabilityNotSupported):
             provider.embed(["x"])
+
+    def test_local_complete_sem_implementacao_levanta_via_metodo_publico(self) -> None:
+        provider = LocalProvider()
+        with self.assertRaises(CapabilityNotSupported):
+            provider.complete("pergunta")
 
     def test_local_sem_vision_levanta_via_metodo_publico(self) -> None:
         provider = LocalProvider()

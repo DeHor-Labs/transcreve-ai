@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -60,13 +61,37 @@ class PipelineOptions:
     on_progress: Callable[[str, str], None] | None = field(default=None, repr=False)
 
 
+_RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+
+
+def _resolve_run_id(source: str, requested_run_id: str = "") -> str:
+    if not requested_run_id:
+        return f"{now_id()}-{slugify(source)}"
+
+    run_id = requested_run_id.strip()
+    if not _RUN_ID_PATTERN.fullmatch(run_id):
+        raise ValueError(
+            "run_id invalido: use apenas letras, numeros, hifen ou underscore, "
+            "sem caminhos ou separadores."
+        )
+    return run_id
+
+
+def _resolve_run_dir(out_dir: Path, run_id: str) -> Path:
+    out_root = ensure_dir(out_dir).resolve()
+    run_dir = ensure_dir(out_root / run_id).resolve()
+    if not run_dir.is_relative_to(out_root):
+        raise ValueError("run_id invalido: diretorio de execucao fora de out_dir.")
+    return run_dir
+
+
 class VideoKnowledgePipeline:
     def __init__(self, options: PipelineOptions):
         self.options = options
 
     def run(self, source: str) -> AnalysisResult:
-        run_id = self.options.run_id or f"{now_id()}-{slugify(source)}"
-        run_dir = ensure_dir(self.options.out_dir / run_id).resolve()
+        run_id = _resolve_run_id(source, self.options.run_id)
+        run_dir = _resolve_run_dir(self.options.out_dir, run_id)
 
         def _emit(step: str, detail: str) -> None:
             print(detail)
