@@ -74,11 +74,11 @@ jobs:
         run: |
           uv sync --frozen --python 3.14 --extra dev --extra obsidian --extra web --extra rag
       - name: Ruff lint
-        run: uv run python -m ruff check video_kb tests
+        run: uv run --python 3.14 python -m ruff check video_kb tests
       - name: MyPy typecheck
-        run: uv run python -m mypy video_kb tests
+        run: uv run --python 3.14 python -m mypy video_kb tests
       - name: Compile Python files
-        run: uv run python -m compileall video_kb tests
+        run: uv run --python 3.14 python -m compileall video_kb tests
 
   python-tests:
     name: Python tests (${{ matrix.python-version }})
@@ -110,7 +110,7 @@ jobs:
         run: |
           uv sync --frozen --python ${{ matrix.python-version }} --extra dev --extra obsidian --extra web --extra rag
       - name: Pytest
-        run: uv run python -m pytest tests
+        run: uv run --python ${{ matrix.python-version }} python -m pytest tests
 
   coverage:
     name: Coverage
@@ -141,7 +141,7 @@ jobs:
           uv sync --frozen --python 3.14 --extra dev --extra obsidian --extra web --extra rag
       - name: Pytest with coverage
         run: |
-          uv run python -m pytest \
+          uv run --python 3.14 python -m pytest \
             --cov=video_kb \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml
