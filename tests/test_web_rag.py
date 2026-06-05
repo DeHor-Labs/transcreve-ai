@@ -186,12 +186,38 @@ class TestSearchEndpoint(_RagWebTestCase):
         with (
             patch("video_kb.providers.load_provider", return_value=self._provider),
             patch("video_kb.providers.resolve_provider_name", return_value="mock"),
-            patch("video_kb.embeddings.search", side_effect=RuntimeError("falha interna")),
+            patch(
+                "video_kb.embeddings.search",
+                side_effect=RuntimeError("token=secreta"),
+            ),
         ):
             resp = self.client.post("/api/search", json={"query": "Python"})
         self.assertEqual(resp.status_code, 500)
         data = resp.json()
         self.assertIn("error", data)
+        self.assertEqual(data["error"], "search_error")
+        self.assertNotIn("token=secreta", str(data["message"]).lower())
+
+    def test_search_top_k_zero_retorna_422(self) -> None:
+        resp = self.client.post("/api/search", json={"query": "Python", "top_k": 0})
+        self.assertEqual(resp.status_code, 422)
+
+    def test_search_top_k_too_alto_retorna_422(self) -> None:
+        resp = self.client.post("/api/search", json={"query": "Python", "top_k": 101})
+        self.assertEqual(resp.status_code, 422)
+
+    def test_search_payload_nao_vaza_erro_interno(self) -> None:
+        with (
+            patch("video_kb.providers.load_provider", return_value=self._provider),
+            patch("video_kb.providers.resolve_provider_name", return_value="mock"),
+            patch(
+                "video_kb.embeddings.search",
+                side_effect=RuntimeError("chave token=secreta"),
+            ),
+        ):
+            resp = self.client.post("/api/search", json={"query": "Python"})
+        self.assertEqual(resp.status_code, 500)
+        self.assertNotIn("token=secreta", resp.text.lower())
 
     def test_search_resposta_tem_campos_obrigatorios(self) -> None:
         with (
@@ -334,12 +360,35 @@ class TestAskEndpoint(_RagWebTestCase):
         with (
             patch("video_kb.providers.load_provider", return_value=self._provider),
             patch("video_kb.providers.resolve_provider_name", return_value="mock"),
-            patch("video_kb.embeddings.rag.ask", side_effect=RuntimeError("falha")),
+            patch("video_kb.embeddings.rag.ask", side_effect=RuntimeError("dados sensiveis")),
         ):
             resp = self.client.post("/api/ask", json={"question": "Pergunta?"})
         self.assertEqual(resp.status_code, 500)
         data = resp.json()
         self.assertIn("error", data)
+        self.assertEqual(data["error"], "ask_error")
+        self.assertNotIn("dados sensiveis", str(data["message"]).lower())
+
+    def test_ask_top_k_zero_retorna_422(self) -> None:
+        resp = self.client.post("/api/ask", json={"question": "Pergunta?", "top_k": 0})
+        self.assertEqual(resp.status_code, 422)
+
+    def test_ask_top_k_too_alto_retorna_422(self) -> None:
+        resp = self.client.post("/api/ask", json={"question": "Pergunta?", "top_k": 101})
+        self.assertEqual(resp.status_code, 422)
+
+    def test_ask_payload_nao_vaza_erro_interno(self) -> None:
+        with (
+            patch("video_kb.providers.load_provider", return_value=self._provider),
+            patch("video_kb.providers.resolve_provider_name", return_value="mock"),
+            patch(
+                "video_kb.embeddings.rag.ask",
+                side_effect=RuntimeError("token=secreta"),
+            ),
+        ):
+            resp = self.client.post("/api/ask", json={"question": "Pergunta?"})
+        self.assertEqual(resp.status_code, 500)
+        self.assertNotIn("token=secreta", resp.text.lower())
 
     def test_ask_resposta_tem_campos_obrigatorios(self) -> None:
         from video_kb.embeddings.rag import AskResult

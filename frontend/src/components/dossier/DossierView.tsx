@@ -36,7 +36,7 @@ export function DossierView({ dossier }: DossierViewProps) {
   const { metadata, synthesis } = analysis;
 
   return (
-    <div className="animate-[fadeIn_0.3s_ease-out_both]" style={{ animation: 'fadeIn 0.3s ease-out both' }}>
+    <div className="animate-[fadeIn_0.3s_ease-out_both]">
       {/* Layout: sidebar + main */}
       <main
         className="flex flex-col lg:flex-row gap-0 lg:gap-8"

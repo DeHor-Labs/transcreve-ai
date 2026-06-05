@@ -21,6 +21,7 @@ from .base import (
 DEFAULT_VISION_MODEL = os.environ.get("VIDEO_KB_VISION_MODEL", "gpt-4o-mini")
 DEFAULT_TRANSCRIBE_MODEL = os.environ.get("VIDEO_KB_TRANSCRIBE_MODEL", "whisper-1")
 DEFAULT_EMBED_MODEL = "text-embedding-3-small"
+MAX_IMAGE_BYTES = int(os.environ.get("VIDEO_KB_MAX_IMAGE_BYTES", str(8 * 1024 * 1024)))
 
 
 class OpenAIProvider(AIProvider):
@@ -233,6 +234,12 @@ class OpenAIProvider(AIProvider):
 
 
 def _image_data_url(path: Path) -> str:
+    size = path.stat().st_size
+    if size > MAX_IMAGE_BYTES:
+        raise ValueError(
+            f"Imagem muito grande para envio ao provider ({size} bytes). "
+            f"Limite: {MAX_IMAGE_BYTES} bytes."
+        )
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
     return f"data:image/jpeg;base64,{encoded}"
 

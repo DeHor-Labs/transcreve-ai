@@ -80,8 +80,10 @@ export function useJobEvents(
             clearReconnectTimeout();
             es.close();
           }
-        } catch {
-          // ignora parse errors
+        } catch (error) {
+          if (import.meta.env.DEV) {
+            console.warn('Falha ao processar evento SSE', error);
+          }
         }
       };
 

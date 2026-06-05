@@ -1,13 +1,52 @@
 from __future__ import annotations
 
+import socket
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from video_kb.sources import detect_source, iter_supported_kinds, needs_cookie_message
 
 
 class TestDetectSource(unittest.TestCase):
+    _DNS_RECORDS = {
+        "private.example": ("10.1.2.3",),
+        "dual.example": ("93.184.216.34", "192.168.1.10"),
+        "ipv6-link-local.example": ("fe80::1",),
+    }
+
+    def setUp(self) -> None:
+        dns_patch = patch(
+            "video_kb.sources.socket.getaddrinfo",
+            side_effect=self._fake_getaddrinfo,
+        )
+        dns_patch.start()
+        self.addCleanup(dns_patch.stop)
+
+    @classmethod
+    def _fake_getaddrinfo(
+        cls,
+        host: str,
+        port: int | None,
+        *args: object,
+        **kwargs: object,
+    ) -> list[tuple[object, object, object, object, tuple[object, ...]]]:
+        normalized = str(host).lower().strip("[]").rstrip(".")
+        if normalized == "dns-failure.example":
+            raise OSError("mocked DNS failure")
+        addresses = cls._DNS_RECORDS.get(normalized, ("93.184.216.34",))
+        resolved = []
+        for address in addresses:
+            family = socket.AF_INET6 if ":" in address else socket.AF_INET
+            sockaddr: tuple[object, ...]
+            if family == socket.AF_INET6:
+                sockaddr = (address, port or 443, 0, 0)
+            else:
+                sockaddr = (address, port or 443)
+            resolved.append((family, socket.SOCK_STREAM, 6, "", sockaddr))
+        return resolved
+
     def test_local_file_is_detected(self) -> None:
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as handle:
             handle.write(b"dummy")
@@ -102,6 +141,52 @@ class TestDetectSource(unittest.TestCase):
         self.assertFalse(probe.requires_cookies)
         self.assertTrue(any("fallback" in note.lower() for note in probe.notes))
 
+    def test_url_ssrf_guard_blocks_private_and_special_ip_literals(self) -> None:
+        blocked_sources = [
+            "http://localhost/video.mp4",
+            "http://service.localhost/video.mp4",
+            "http://127.0.0.1/video.mp4",
+            "http://10.0.0.1/video.mp4",
+            "http://172.16.0.1/video.mp4",
+            "http://192.168.0.1/video.mp4",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://0.0.0.0/video.mp4",
+            "http://224.0.0.1/video.mp4",
+            "http://[::1]/video.mp4",
+            "http://[::]/video.mp4",
+            "http://[fe80::1]/video.mp4",
+            "http://[ff02::1]/video.mp4",
+            "http://[::ffff:127.0.0.1]/video.mp4",
+        ]
+
+        for source in blocked_sources:
+            with self.subTest(source=source):
+                with self.assertRaises(ValueError):
+                    detect_source(source)
+
+    def test_url_ssrf_guard_blocks_private_dns_resolution(self) -> None:
+        blocked_sources = [
+            "https://private.example/video.mp4",
+            "https://dual.example/video.mp4",
+            "https://ipv6-link-local.example/video.mp4",
+        ]
+
+        for source in blocked_sources:
+            with self.subTest(source=source):
+                with self.assertRaises(ValueError):
+                    detect_source(source)
+
+    def test_url_ssrf_guard_blocks_dns_failure_and_credentials(self) -> None:
+        blocked_sources = [
+            "https://dns-failure.example/video.mp4",
+            "https://user:pass@example.com/video.mp4",
+        ]
+
+        for source in blocked_sources:
+            with self.subTest(source=source):
+                with self.assertRaises(ValueError):
+                    detect_source(source)
+
     def test_file_url_is_detected(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             file_path = Path(tmpdir) / "file.mp4"
@@ -121,6 +206,51 @@ class TestDetectSource(unittest.TestCase):
         self.assertFalse(probe.is_url)
         self.assertEqual(probe.canonical, str(file_path))
         self.assertTrue(any("nao foi encontrado" in note.lower() for note in probe.notes))
+
+    def test_local_file_outside_allowed_roots_is_unknown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            allowed_root = Path(tmpdir) / "allowed"
+            blocked_root = Path(tmpdir) / "blocked"
+            allowed_root.mkdir()
+            blocked_root.mkdir()
+            file_path = blocked_root / "file.mp4"
+            file_path.write_bytes(b"dummy")
+
+            with patch(
+                "video_kb.sources._allowed_local_source_roots",
+                return_value=(allowed_root.resolve(),),
+            ):
+                probe = detect_source(str(file_path))
+
+        self.assertEqual(probe.kind, "unknown")
+        self.assertEqual(probe.adapter, "unknown")
+        self.assertTrue(any("raizes permitidas" in note.lower() for note in probe.notes))
+
+    def test_file_url_reuses_local_path_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            allowed_root = Path(tmpdir) / "allowed"
+            blocked_root = Path(tmpdir) / "blocked"
+            allowed_root.mkdir()
+            blocked_root.mkdir()
+            file_path = blocked_root / "file.mp4"
+            file_path.write_bytes(b"dummy")
+
+            with patch(
+                "video_kb.sources._allowed_local_source_roots",
+                return_value=(allowed_root.resolve(),),
+            ):
+                probe = detect_source(file_path.as_uri())
+
+        self.assertEqual(probe.kind, "unknown")
+        self.assertEqual(probe.adapter, "unknown")
+        self.assertTrue(any("raizes permitidas" in note.lower() for note in probe.notes))
+
+    def test_remote_file_url_is_unknown(self) -> None:
+        probe = detect_source("file://example.com/tmp/file.mp4")
+
+        self.assertEqual(probe.kind, "unknown")
+        self.assertEqual(probe.adapter, "unknown")
+        self.assertTrue(any("host remoto" in note.lower() for note in probe.notes))
 
     def test_existing_non_media_file_is_unknown(self) -> None:
         with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as handle:

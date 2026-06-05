@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import tempfile
 import uuid
@@ -33,6 +34,8 @@ from ..schemas import (
     SourceProbeResponse,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 router = APIRouter()
 _UPLOAD_CHUNK_BYTES = 1024 * 1024
 _MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
@@ -46,6 +49,11 @@ _MIME_SUFFIXES = {
     "video/x-m4v": ".m4v",
     "video/x-flv": ".flv",
 }
+
+
+def _log_exception(message: str, *args: object) -> None:
+    """Registra erro interno com contexto sem vazar detalhes para o cliente."""
+    _LOGGER.exception(message, *args)
 
 
 def _is_http_probe_source(source: str) -> bool:
@@ -650,22 +658,24 @@ async def search_knowledge(
         from ...embeddings import search as rag_search
         from ...index import resolve_index_path
         from ...providers import load_provider, resolve_provider_name
-    except ImportError as exc:
+    except ImportError:
+        _log_exception("search_knowledge: falha ao importar dependencias do RAG.")
         return JSONResponse(
             status_code=503,
             content={
                 "error": "rag_unavailable",
-                "message": f"Modulo RAG nao disponivel: {exc}. Instale 'transcreve-ai[rag]'.",
+                "message": "Modulo RAG indisponivel no momento. Instale 'transcreve-ai[rag]'.",
             },
         )
 
     provider_name = resolve_provider_name(None)
     try:
         provider = load_provider(provider_name)
-    except Exception as exc:
+    except Exception:
+        _log_exception("search_knowledge: falha ao carregar provider '%s'.", provider_name)
         return JSONResponse(
             status_code=503,
-            content={"error": "provider_error", "message": str(exc)},
+            content={"error": "provider_error", "message": "Provider indisponivel para busca."},
         )
 
     if "embed" not in provider.capabilities():
@@ -695,10 +705,14 @@ async def search_knowledge(
             status_code=503,
             content={"error": "capability_not_supported", "message": str(exc)},
         )
-    except Exception as exc:
+    except Exception:
+        _log_exception("search_knowledge: erro interno ao executar busca semantica.")
         return JSONResponse(
             status_code=500,
-            content={"error": "search_error", "message": str(exc)},
+            content={
+                "error": "search_error",
+                "message": "Falha interna ao realizar busca semantica.",
+            },
         )
 
     results = [
@@ -742,22 +756,24 @@ async def ask_knowledge(
         from ...embeddings.rag import ask as rag_ask
         from ...index import resolve_index_path
         from ...providers import load_provider, resolve_provider_name
-    except ImportError as exc:
+    except ImportError:
+        _log_exception("ask_knowledge: falha ao importar dependencias do RAG.")
         return JSONResponse(
             status_code=503,
             content={
                 "error": "rag_unavailable",
-                "message": f"Modulo RAG nao disponivel: {exc}. Instale 'transcreve-ai[rag]'.",
+                "message": "Modulo RAG indisponivel no momento. Instale 'transcreve-ai[rag]'.",
             },
         )
 
     provider_name = resolve_provider_name(None)
     try:
         provider = load_provider(provider_name)
-    except Exception as exc:
+    except Exception:
+        _log_exception("ask_knowledge: falha ao carregar provider '%s'.", provider_name)
         return JSONResponse(
             status_code=503,
-            content={"error": "provider_error", "message": str(exc)},
+            content={"error": "provider_error", "message": "Provider indisponivel para consulta."},
         )
 
     if "embed" not in provider.capabilities():
@@ -788,10 +804,11 @@ async def ask_knowledge(
             status_code=503,
             content={"error": "capability_not_supported", "message": str(exc)},
         )
-    except Exception as exc:
+    except Exception:
+        _log_exception("ask_knowledge: erro interno ao executar consulta RAG.")
         return JSONResponse(
             status_code=500,
-            content={"error": "ask_error", "message": str(exc)},
+            content={"error": "ask_error", "message": "Falha interna ao gerar resposta."},
         )
 
     sources = [

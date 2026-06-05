@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,8 @@ from .pipeline import PipelineOptions, VideoKnowledgePipeline
 from .sources import SourceProbe, detect_source
 from .storage.registry import resolve_storage_name
 from .utils import sha256_file, sha256_url
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -59,7 +62,22 @@ class AgentWorkflowResult:
 
 
 def run_agent_workflow(source: str, options: AgentWorkflowOptions) -> AgentWorkflowResult:
-    probe = detect_source(source)
+    try:
+        probe = detect_source(source)
+    except ValueError as exc:
+        probe = SourceProbe(
+            source=source,
+            kind="unknown",
+            adapter="unknown",
+            is_url=False,
+            canonical=source,
+            notes=[str(exc)],
+        )
+        return AgentWorkflowResult(
+            source=source,
+            probe=probe,
+            warnings=["Fonte rejeitada por validacao de seguranca."],
+        )
     if probe.kind == "unknown":
         return AgentWorkflowResult(
             source=source,
@@ -96,9 +114,10 @@ def run_agent_workflow(source: str, options: AgentWorkflowOptions) -> AgentWorkf
         result = _result_from_analysis(source, probe, analysis_result, warnings)
     except DuplicateRunError as exc:
         result = _result_from_existing(source, probe, exc.existing, warnings)
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
+        _LOGGER.exception("Falha no fluxo principal do agente para fonte '%s'.", source)
         failed_run_id = _mark_latest_partial_failed(source, probe, options.index_db)
-        failure_warnings = [*warnings, f"Analise falhou: {exc}"]
+        failure_warnings = [*warnings, "Falha ao processar a analise. Consulte os logs."]
         if failed_run_id:
             failure_warnings.append(
                 f"Run parcial '{failed_run_id}' marcado como failed para nao bloquear retry."
@@ -193,15 +212,17 @@ def _index_result(result: AgentWorkflowResult, options: AgentWorkflowOptions) ->
         from .embeddings import EmbedNotSupportedError, index_run
         from .embeddings.store import EmbeddingStore
         from .providers import CapabilityNotSupported, load_provider, resolve_provider_name
-    except ImportError as exc:
-        result.warnings.append(f"Dependencias de RAG ausentes: {exc}")
+    except ImportError:
+        _LOGGER.exception("Falha ao importar dependencias de RAG para indexacao.")
+        result.warnings.append("Dependencias de RAG ausentes para indexacao.")
         return
 
     provider_name = resolve_provider_name(options.provider_name or None)
     try:
         provider = load_provider(provider_name)
-    except Exception as exc:  # noqa: BLE001
-        result.warnings.append(f"Erro ao carregar provider '{provider_name}' para index: {exc}")
+    except Exception:  # noqa: BLE001
+        _LOGGER.exception("Falha ao carregar provider '%s' para indexacao.", provider_name)
+        result.warnings.append(f"Erro ao carregar provider para indexacao: {provider_name}.")
         return
 
     if "embed" not in provider.capabilities():
@@ -217,8 +238,9 @@ def _index_result(result: AgentWorkflowResult, options: AgentWorkflowOptions) ->
 
     try:
         analysis = json.loads(Path(result.analysis_path).read_text(encoding="utf-8"))
-    except Exception as exc:  # noqa: BLE001
-        result.warnings.append(f"Nao foi possivel ler analysis.json para index: {exc}")
+    except Exception:  # noqa: BLE001
+        _LOGGER.exception("Falha ao ler analysis.json para indexacao: run_id=%s", result.run_id)
+        result.warnings.append("Nao foi possivel ler analysis.json para indexacao.")
         return
 
     try:
@@ -231,11 +253,13 @@ def _index_result(result: AgentWorkflowResult, options: AgentWorkflowOptions) ->
             db_path=db_path,
             force=options.index_force,
         )
-    except CapabilityNotSupported as exc:
-        result.warnings.append(str(exc))
+    except CapabilityNotSupported:
+        _LOGGER.exception("Provider '%s' sem capability requerida para indexacao.", provider_name)
+        result.warnings.append(f"Provider '{provider_name}' nao suporta embeddings para indexacao.")
         return
-    except Exception as exc:  # noqa: BLE001
-        result.warnings.append(f"Erro ao indexar run '{result.run_id}': {exc}")
+    except Exception:  # noqa: BLE001
+        _LOGGER.exception("Falha ao indexar run '%s'.", result.run_id)
+        result.warnings.append("Erro ao indexar run. Consulte os logs.")
         return
 
     result.indexed = True
@@ -248,15 +272,17 @@ def _answer_question(result: AgentWorkflowResult, options: AgentWorkflowOptions)
     try:
         from .embeddings.rag import ask
         from .providers import load_provider, resolve_provider_name
-    except ImportError as exc:
-        result.warnings.append(f"Dependencias de RAG ausentes: {exc}")
+    except ImportError:
+        _LOGGER.exception("Falha ao importar dependencias de RAG para ask.")
+        result.warnings.append("Dependencias de RAG ausentes para responder pergunta.")
         return
 
     provider_name = resolve_provider_name(options.provider_name or None)
     try:
         provider = load_provider(provider_name)
-    except Exception as exc:  # noqa: BLE001
-        result.warnings.append(f"Erro ao carregar provider '{provider_name}' para ask: {exc}")
+    except Exception:  # noqa: BLE001
+        _LOGGER.exception("Falha ao carregar provider '%s' para ask.", provider_name)
+        result.warnings.append(f"Erro ao carregar provider para pergunta: {provider_name}.")
         return
 
     if "embed" not in provider.capabilities():
@@ -272,9 +298,12 @@ def _answer_question(result: AgentWorkflowResult, options: AgentWorkflowOptions)
             top_k=options.top_k,
             run_ids=[result.run_id],
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
+        _LOGGER.exception(
+            "Falha ao responder pergunta no fluxo do agente para run '%s'.", result.run_id
+        )
         result.question = options.question
-        result.warnings.append(f"Erro ao responder pergunta: {exc}")
+        result.warnings.append("Erro ao responder pergunta. Consulte os logs.")
         return
     result.question = rag_result.question
     result.answer = rag_result.answer

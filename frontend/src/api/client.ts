@@ -14,9 +14,21 @@ export function isApiError(e: unknown): e is ApiRequestError {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const requestInit: RequestInit = { ...init };
+  const method = (requestInit.method ?? 'GET').toUpperCase();
+  const hasBody = requestInit.body != null;
+  const isGetWithoutBody = method === 'GET' && !hasBody;
+  const headers = new Headers(requestInit.headers ?? {});
+
+  if (isGetWithoutBody) {
+    headers.delete('Content-Type');
+  } else if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
   const res = await fetch(`/api${path}`, {
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
-    ...init,
+    ...requestInit,
+    headers,
   });
   if (!res.ok) {
     let body: unknown;
@@ -26,16 +38,35 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export function get<T>(path: string): Promise<T> {
-  return request<T>(path, { method: 'GET', headers: {} });
+export function get<T>(
+  path: string,
+  options?: Omit<RequestInit, 'method' | 'body'>,
+): Promise<T> {
+  return request<T>(path, { method: 'GET', ...options });
 }
 
-export function post<T>(path: string, body: unknown): Promise<T> {
-  return request<T>(path, { method: 'POST', body: JSON.stringify(body) });
+export function post<T>(
+  path: string,
+  body: unknown,
+  options?: Omit<RequestInit, 'method' | 'body'>,
+): Promise<T> {
+  return request<T>(path, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    ...options,
+  });
 }
 
-export async function postForm<T>(path: string, form: FormData): Promise<T> {
-  const res = await fetch(`/api${path}`, { method: 'POST', body: form });
+export async function postForm<T>(
+  path: string,
+  form: FormData,
+  options?: Omit<RequestInit, 'method' | 'body'>,
+): Promise<T> {
+  const res = await fetch(`/api${path}`, {
+    ...options,
+    method: 'POST',
+    body: form,
+  });
   if (!res.ok) {
     let body: unknown;
     try { body = await res.json(); } catch { body = null; }

@@ -16,7 +16,10 @@ oficiais dos providers para valores atualizados.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+_LOGGER = logging.getLogger(__name__)
 
 # Estimativas baseadas em precos publicos (podem mudar)
 PRICE_TABLE: dict[str, dict[str, float]] = {
@@ -62,6 +65,9 @@ def estimate_cost(
     transcript_len_chars: int,
     visual_notes_len_chars: int = 0,
     price_table: dict[str, Any] | None = None,
+    vision_tokens_per_frame: int = 800,
+    synth_overhead_tokens: int = 2000,
+    synth_output_tokens: int = 1500,
 ) -> dict[str, float]:
     """
     Estima custo em USD para um run.
@@ -73,9 +79,17 @@ def estimate_cost(
         transcript_len_chars: comprimento do transcript em caracteres
         visual_notes_len_chars: comprimento total das notas visuais (opcional)
         price_table: tabela customizada (usa PRICE_TABLE se None)
+        vision_tokens_per_frame: estimativa de tokens por frame analisado
+        synth_overhead_tokens: overhead heuristico de prompt da sintese
+        synth_output_tokens: estimativa de tokens de saida da sintese
 
     Retorna dict com: whisper_usd, vision_usd, synthesis_usd, total_usd
     """
+    if price_table is None:
+        _LOGGER.debug(
+            "estimate_cost usando PRICE_TABLE e assumptions default; "
+            "verifique precos oficiais para estimativas financeiras."
+        )
     table = price_table if price_table is not None else PRICE_TABLE
     prices = table.get(provider_name, _FALLBACK_PRICES)
 
@@ -83,17 +97,15 @@ def estimate_cost(
     duration_min = duration_seconds / 60.0
     whisper_usd = duration_min * prices.get("whisper_per_min", 0.0)
 
-    # Custo de visao: ~800 tokens de entrada por frame
-    vision_tokens = frames_with_visual_note * 800
+    vision_tokens = frames_with_visual_note * vision_tokens_per_frame
     vision_usd = (vision_tokens / 1000.0) * prices.get("vision_in_per_1k", 0.0)
 
-    # Custo de sintese: input = transcript + notas visuais + overhead ~2000 tokens
+    # Custo de sintese: input = transcript + notas visuais + overhead configuravel
     transcript_tokens = transcript_len_chars / 4.0
     notes_tokens = visual_notes_len_chars / 4.0
-    synth_in_tokens = transcript_tokens + notes_tokens + 2000
-    synth_out_tokens = 1500  # estimativa de saida da sintese
+    synth_in_tokens = transcript_tokens + notes_tokens + synth_overhead_tokens
     synthesis_usd = (synth_in_tokens / 1000.0) * prices.get("synth_in_per_1k", 0.0) + (
-        synth_out_tokens / 1000.0
+        synth_output_tokens / 1000.0
     ) * prices.get("synth_out_per_1k", 0.0)
 
     total_usd = whisper_usd + vision_usd + synthesis_usd

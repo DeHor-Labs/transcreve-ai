@@ -14,6 +14,12 @@ from .jobs import JobStore, worker_task
 _VERSION = "0.1.0"
 
 
+def _accepts_html(scope: dict[str, object]) -> bool:
+    from starlette.datastructures import Headers
+
+    return "text/html" in Headers(scope=scope).get("accept", "")
+
+
 def create_app(
     out_dir: Path | None = None,
     index_db: str | None = None,
@@ -51,7 +57,7 @@ def create_app(
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-        allow_credentials=True,
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -63,7 +69,6 @@ def create_app(
     # Serve frontend/dist se existir (SPA)
     _dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
     if _dist.is_dir():
-        from starlette.datastructures import Headers
         from starlette.exceptions import HTTPException as StarletteHTTPException
         from starlette.staticfiles import StaticFiles
 
@@ -74,14 +79,12 @@ def create_app(
                 except StarletteHTTPException as exc:
                     if exc.status_code != 404 or scope.get("method") not in {"GET", "HEAD"}:
                         raise
-                    headers = Headers(scope=scope)
-                    if "text/html" not in headers.get("accept", ""):
+                    if not _accepts_html(scope):
                         raise
                     return await super().get_response("index.html", scope)
 
                 if response.status_code == 404 and scope.get("method") in {"GET", "HEAD"}:
-                    headers = Headers(scope=scope)
-                    if "text/html" in headers.get("accept", ""):
+                    if _accepts_html(scope):
                         return await super().get_response("index.html", scope)
                 return response
 

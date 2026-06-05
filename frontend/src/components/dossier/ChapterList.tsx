@@ -17,7 +17,7 @@ function formatTime(secs: number): string {
 
 export function ChapterList({ chapters }: ChapterListProps) {
   if (chapters.length === 0) {
-    return <p className="text-text-muted text-sm italic">Nenhum capitulo detectado.</p>;
+    return <p className="text-text-muted text-sm italic">Nenhum capítulo detectado.</p>;
   }
 
   return (

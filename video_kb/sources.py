@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import os
+import socket
+import tempfile
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
+from ipaddress import IPv4Address, IPv6Address, ip_address
 from pathlib import Path
-from urllib.parse import ParseResult, urlparse
+from urllib.parse import ParseResult, unquote, urlparse
 
 
 @dataclass(frozen=True)
@@ -20,6 +24,10 @@ class SourceProbe:
         data = asdict(self)
         data["notes"] = list(self.notes)
         return data
+
+
+class UnsafeSourceUrlError(ValueError):
+    """Raised when a URL is unsafe to classify for server-side processing."""
 
 
 _VIDEO_EXTENSIONS: frozenset[str] = frozenset(
@@ -114,38 +122,111 @@ _REDDIT_HOSTS = frozenset(
 _TWITCH_HOSTS = frozenset({"twitch.tv", "www.twitch.tv", "m.twitch.tv"})
 _GOOGLE_DRIVE_HOSTS = frozenset({"drive.google.com", "docs.google.com"})
 _DROPBOX_HOSTS = frozenset({"dropbox.com", "www.dropbox.com"})
+_LOCAL_SOURCE_ROOTS_ENV = "VIDEO_KB_ALLOWED_LOCAL_SOURCE_ROOTS"
+_LOCAL_SOURCE_AUTHZ_NOTE = (
+    "detect_source apenas classifica a fonte; valide autorizacao e permissoes "
+    "antes de ler qualquer arquivo local."
+)
 
 
 def _normalize_host(host: str | None) -> str:
     if not host:
         return ""
-    return host.lower().strip()
+    return host.lower().strip().rstrip(".")
 
 
-def _probe_local_source(source: str) -> SourceProbe | None:
-    file_path = Path(source).expanduser()
-    if file_path.exists() and file_path.is_file():
-        if file_path.suffix.lower() not in _VIDEO_EXTENSIONS:
-            return SourceProbe(
-                source=source,
-                kind="unknown",
-                adapter="unknown",
-                is_url=False,
-                canonical=str(file_path.resolve()),
-                notes=[
-                    "Arquivo local encontrado, mas a extensao nao parece midia suportada.",
-                    "Use um arquivo de video/audio ou uma URL suportada.",
-                ],
-            )
+def _resolve_path(path: Path) -> Path:
+    return path.expanduser().resolve(strict=False)
+
+
+def _allowed_local_source_roots() -> tuple[Path, ...]:
+    roots = [Path.cwd(), Path(tempfile.gettempdir())]
+    configured_roots = os.environ.get(_LOCAL_SOURCE_ROOTS_ENV, "")
+    roots.extend(Path(raw) for raw in configured_roots.split(os.pathsep) if raw.strip())
+
+    resolved_roots: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        resolved = _resolve_path(root)
+        key = str(resolved)
+        if key not in seen:
+            resolved_roots.append(resolved)
+            seen.add(key)
+    return tuple(resolved_roots)
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _is_allowed_local_source_path(resolved_path: Path) -> bool:
+    return any(
+        resolved_path == root or _is_relative_to(resolved_path, root)
+        for root in _allowed_local_source_roots()
+    )
+
+
+def _probe_local_path(source: str, file_path: Path, *, via_file_url: bool) -> SourceProbe:
+    expanded_path = file_path.expanduser()
+    resolved_path = _resolve_path(expanded_path)
+    canonical = str(resolved_path)
+    source_label = " via file://" if via_file_url else ""
+
+    if not _is_allowed_local_source_path(resolved_path):
         return SourceProbe(
             source=source,
-            kind="local_file",
-            adapter="local_file",
+            kind="unknown",
+            adapter="unknown",
             is_url=False,
-            canonical=str(file_path.resolve()),
-            notes=["Arquivo local encontrado."],
+            canonical=str(expanded_path),
+            notes=[
+                f"Caminho local{source_label} fora das raizes permitidas para probe.",
+                f"Configure {_LOCAL_SOURCE_ROOTS_ENV} para liberar raizes adicionais.",
+                _LOCAL_SOURCE_AUTHZ_NOTE,
+            ],
         )
-    return None
+
+    if not expanded_path.exists() or not expanded_path.is_file():
+        return SourceProbe(
+            source=source,
+            kind="unknown",
+            adapter="unknown",
+            is_url=False,
+            canonical=str(expanded_path),
+            notes=[f"Caminho local informado{source_label} nao foi encontrado."],
+        )
+
+    if expanded_path.suffix.lower() not in _VIDEO_EXTENSIONS:
+        return SourceProbe(
+            source=source,
+            kind="unknown",
+            adapter="unknown",
+            is_url=False,
+            canonical=canonical,
+            notes=[
+                f"Arquivo local{source_label} encontrado, mas a extensao nao parece "
+                "midia suportada.",
+                "Use um arquivo de video/audio ou uma URL suportada.",
+                _LOCAL_SOURCE_AUTHZ_NOTE,
+            ],
+        )
+
+    return SourceProbe(
+        source=source,
+        kind="local_file",
+        adapter="local_file",
+        is_url=False,
+        canonical=canonical,
+        notes=[f"Arquivo local{source_label} encontrado.", _LOCAL_SOURCE_AUTHZ_NOTE],
+    )
+
+
+def _probe_local_source(source: str) -> SourceProbe:
+    return _probe_local_path(source, Path(source), via_file_url=False)
 
 
 def _is_http_url(source: str) -> bool:
@@ -188,7 +269,70 @@ def _requires_twitch_cookies(path: str) -> bool:
     return "/videos/" in path or "/clips/" in path
 
 
+def _parse_ip_address(value: str) -> IPv4Address | IPv6Address | None:
+    normalized = value.strip().strip("[]").split("%", 1)[0]
+    try:
+        return ip_address(normalized)
+    except ValueError:
+        return None
+
+
+def _is_forbidden_probe_ip(address: IPv4Address | IPv6Address) -> bool:
+    return (
+        not address.is_global
+        or address.is_loopback
+        or address.is_private
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_unspecified
+        or address.is_reserved
+    )
+
+
+def _raise_if_forbidden_host(host: str) -> None:
+    normalized = _normalize_host(host).strip("[]")
+    if not normalized:
+        raise UnsafeSourceUrlError("URL sem host.")
+    if normalized == "localhost" or normalized.endswith(".localhost"):
+        raise UnsafeSourceUrlError("URL aponta para host local.")
+
+    address = _parse_ip_address(normalized)
+    if address is not None and _is_forbidden_probe_ip(address):
+        raise UnsafeSourceUrlError("URL aponta para IP local/privado/reservado.")
+
+
+def _validate_public_probe_url(source: str, parsed: ParseResult) -> None:
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise UnsafeSourceUrlError("URL de fonte deve usar http(s).")
+    if parsed.username or parsed.password:
+        raise UnsafeSourceUrlError("URL de fonte nao pode incluir credenciais.")
+
+    try:
+        host = parsed.hostname or ""
+        port = parsed.port
+    except ValueError as exc:
+        raise UnsafeSourceUrlError("URL de fonte tem host ou porta invalida.") from exc
+
+    _raise_if_forbidden_host(host)
+
+    try:
+        infos = socket.getaddrinfo(host, port or None, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        raise UnsafeSourceUrlError(f"Nao foi possivel resolver DNS para '{host}'.") from exc
+
+    if not infos:
+        raise UnsafeSourceUrlError(f"Nao foi possivel resolver DNS para '{host}'.")
+
+    for *_, sockaddr in infos:
+        resolved_host = str(sockaddr[0])
+        address = _parse_ip_address(resolved_host)
+        if address is None or _is_forbidden_probe_ip(address):
+            raise UnsafeSourceUrlError("URL resolve para IP local/privado/reservado.")
+
+
 def _probe_url(source: str, parsed: ParseResult) -> SourceProbe:
+    _validate_public_probe_url(source, parsed)
+
     host = _normalize_host(parsed.hostname)
     path = (parsed.path or "").lower()
 
@@ -380,6 +524,11 @@ def _probe_url(source: str, parsed: ParseResult) -> SourceProbe:
 
 
 def detect_source(source: str) -> SourceProbe:
+    """Classify a source.
+
+    This is a best-effort classifier, not authorization to read local files or fetch
+    remote URLs. Callers must enforce their own access policy before consuming a source.
+    """
     source = source.strip()
     if not source:
         raise ValueError("source vazio")
@@ -387,55 +536,21 @@ def detect_source(source: str) -> SourceProbe:
     # URLs file:// também entram no fluxo local
     parsed = urlparse(source)
     if parsed.scheme == "file":
-        local = Path(parsed.path).expanduser()
-        if local.exists() and local.is_file():
-            if local.suffix.lower() not in _VIDEO_EXTENSIONS:
-                return SourceProbe(
-                    source=source,
-                    kind="unknown",
-                    adapter="unknown",
-                    is_url=False,
-                    canonical=str(local.resolve()),
-                    notes=[
-                        "Arquivo local via file:// encontrado, mas a extensao nao parece "
-                        "midia suportada.",
-                    ],
-                )
+        if parsed.netloc and _normalize_host(parsed.netloc) != "localhost":
             return SourceProbe(
                 source=source,
-                kind="local_file",
-                adapter="local_file",
+                kind="unknown",
+                adapter="unknown",
                 is_url=False,
-                canonical=str(local.resolve()),
-                notes=["Arquivo local via file://."],
+                canonical=source,
+                notes=["URL file:// com host remoto nao e suportada."],
             )
-        return SourceProbe(
-            source=source,
-            kind="unknown",
-            adapter="unknown",
-            is_url=False,
-            canonical=str(local),
-            notes=["Caminho local informado via file:// nao foi encontrado."],
-        )
+        return _probe_local_path(source, Path(unquote(parsed.path)), via_file_url=True)
 
     if _is_http_url(source):
         return _probe_url(source, parsed)
 
-    local_probe = _probe_local_source(source)
-    if local_probe is not None:
-        return local_probe
-
-    return SourceProbe(
-        source=source,
-        kind="unknown",
-        adapter="unknown",
-        is_url=False,
-        canonical=source,
-        notes=[
-            "Nao foi possivel reconhecer como URL valida nem como arquivo local existente.",
-            "Use um caminho absoluto/relativo correto ou uma URL suportada.",
-        ],
-    )
+    return _probe_local_source(source)
 
 
 def needs_cookie_message(probe: SourceProbe) -> str | None:

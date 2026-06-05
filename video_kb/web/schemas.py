@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SubmitUrlRequest(BaseModel):
@@ -89,7 +89,7 @@ class SourceProbeResponse(BaseModel):
 
 class SearchRequest(BaseModel):
     query: str
-    top_k: int = 5
+    top_k: int = Field(default=5, ge=1, le=100)
     run_ids: list[str] | None = None
 
 
@@ -111,7 +111,7 @@ class SearchResponse(BaseModel):
 
 class AskRequest(BaseModel):
     question: str
-    top_k: int = 5
+    top_k: int = Field(default=5, ge=1, le=100)
     run_ids: list[str] | None = None
 
 

@@ -147,6 +147,16 @@ class OpenAICapabilities(unittest.TestCase):
         kwargs = mock_client.chat.completions.create.call_args.kwargs
         self.assertNotIn("response_format", kwargs)
 
+    def test_image_data_url_rejeita_arquivo_grande(self) -> None:
+        from video_kb.providers.openai_provider import _image_data_url
+
+        with tempfile.NamedTemporaryFile(suffix=".jpg") as tmp:
+            path = Path(tmp.name)
+            path.write_bytes(b"x" * 1024)
+            with patch("video_kb.providers.openai_provider.MAX_IMAGE_BYTES", 10):
+                with self.assertRaises(ValueError):
+                    _image_data_url(path)
+
 
 # ---------------------------------------------------------------------------
 # Local
@@ -225,6 +235,15 @@ class LocalCapabilities(unittest.TestCase):
         offsets = [call.args[2] for call in transcribe_chunk.call_args_list]
         self.assertEqual(offsets, [0.0, 77.5])
         self.assertEqual(result.text, "local 1\nlocal 2")
+
+    def test_extract_chapters_usa_duracao_real(self) -> None:
+        from video_kb.providers.local_provider import _extract_chapters
+
+        transcript = " ".join(f"palavra{i}" for i in range(240))
+        chapters = _extract_chapters(transcript, duration_seconds=120.0)
+
+        starts = [chapter["start"] for chapter in chapters]
+        self.assertIn("00:30", starts)
 
 
 # ---------------------------------------------------------------------------

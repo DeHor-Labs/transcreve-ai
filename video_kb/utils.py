@@ -117,27 +117,15 @@ def sha256_url(url: str) -> str:
     path = parsed.path.rstrip("/")
     qs = urllib.parse.parse_qs(parsed.query, keep_blank_values=False)
 
-    # YouTube: youtube.com ou youtu.be
-    if host in ("youtube.com", "youtu.be", "m.youtube.com"):
-        if host == "youtu.be":
-            vid = path.lstrip("/")
-        else:
-            vid = (qs.get("v") or [""])[0]
-            if not vid:
-                # /shorts/<id> ou /embed/<id>
-                parts = path.strip("/").split("/")
-                vid = parts[-1] if len(parts) >= 2 else ""
-        if vid:
-            canonical = f"youtube:{vid}"
-            return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    vid = _extract_youtube_id(host, path, qs, url)
+    if vid:
+        canonical = f"youtube:{vid}"
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
-    # Vimeo: vimeo.com
-    if host == "vimeo.com":
-        parts = path.strip("/").split("/")
-        vid = parts[0] if parts else ""
-        if vid and vid.isdigit():
-            canonical = f"vimeo:{vid}"
-            return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    vid = _extract_vimeo_id(host, path)
+    if vid:
+        canonical = f"vimeo:{vid}"
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     # Fallback generico: host + path sem parametros de rastreamento
     clean_qs = {k: v for k, v in qs.items() if k not in _TRACKING_PARAMS}
@@ -146,6 +134,54 @@ def sha256_url(url: str) -> str:
     if clean_query:
         canonical = f"{canonical}?{clean_query}"
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _extract_youtube_id(
+    host: str,
+    path: str,
+    qs: dict[str, list[str]],
+    raw_url: str,
+) -> str:
+    youtube_hosts = {
+        "youtube.com",
+        "m.youtube.com",
+        "music.youtube.com",
+        "youtube-nocookie.com",
+        "www.youtube-nocookie.com",
+        "youtube-kids.com",
+        "youtu.be",
+    }
+    candidate = ""
+    if _valid_youtube_id(raw_url):
+        candidate = raw_url
+    elif host in youtube_hosts:
+        parts = [part for part in path.strip("/").split("/") if part]
+        if host == "youtu.be":
+            candidate = parts[0] if parts else ""
+        else:
+            candidate = (qs.get("v") or [""])[0]
+            if not candidate and parts and parts[0] in {
+                "shorts",
+                "embed",
+                "v",
+                "e",
+                "live",
+            }:
+                candidate = parts[1] if len(parts) > 1 else ""
+    return candidate if _valid_youtube_id(candidate) else ""
+
+
+def _valid_youtube_id(value: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z0-9_-]{11}", value or ""))
+
+
+def _extract_vimeo_id(host: str, path: str) -> str:
+    if host not in {"vimeo.com", "player.vimeo.com"}:
+        return ""
+    for part in path.strip("/").split("/"):
+        if part.isdigit():
+            return part
+    return ""
 
 
 def sha256_file(path: Path) -> str:

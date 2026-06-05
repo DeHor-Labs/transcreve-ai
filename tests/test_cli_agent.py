@@ -35,6 +35,18 @@ class TestCliAgentRun(unittest.TestCase):
         self.assertFalse(payload["run_id"])
         self.assertGreater(len(payload["warnings"]), 0)
 
+    def test_agent_run_unsafe_source_json_exits_nonzero(self) -> None:
+        out, err, code = _run_cmd(["agent", "run", "http://127.0.0.1/video.mp4", "--json"])
+
+        self.assertEqual(code, 1, msg=err)
+        payload = json.loads(out.strip() or "{}")
+        self.assertEqual(payload["probe"]["kind"], "unknown")
+        self.assertFalse(payload["run_id"])
+        warnings = " ".join(payload["warnings"])
+        notes = " ".join(payload["probe"]["notes"])
+        self.assertIn("validacao de seguranca", warnings)
+        self.assertIn("local", notes)
+
     def test_agent_run_with_mocked_pipeline_outputs_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             source = Path(tmpdir) / "video.mp4"
@@ -80,7 +92,9 @@ class TestCliAgentRun(unittest.TestCase):
         payload = json.loads(out.strip() or "{}")
         self.assertEqual(payload["probe"]["kind"], "local_file")
         self.assertFalse(payload["run_id"])
-        self.assertIn("download falhou", " ".join(payload["warnings"]))
+        warnings = " ".join(payload["warnings"])
+        self.assertNotIn("download falhou", warnings)
+        self.assertIn("Consulte os logs", warnings)
 
     def test_agent_run_duplicate_without_artifacts_exits_nonzero(self) -> None:
         from video_kb.index import DuplicateRunError
@@ -177,7 +191,9 @@ class TestCliAgentRun(unittest.TestCase):
                     _index_result(result, options)
 
         self.assertFalse(result.indexed)
-        self.assertIn("embed caiu", " ".join(result.warnings))
+        warnings = " ".join(result.warnings)
+        self.assertNotIn("embed caiu", warnings)
+        self.assertIn("Consulte os logs", warnings)
 
     def test_answer_question_runtime_error_becomes_warning(self) -> None:
         from video_kb.agent_workflow import (
@@ -214,7 +230,9 @@ class TestCliAgentRun(unittest.TestCase):
 
         self.assertEqual(result.question, "resuma")
         self.assertIsNone(result.answer)
-        self.assertIn("rag caiu", " ".join(result.warnings))
+        warnings = " ".join(result.warnings)
+        self.assertNotIn("rag caiu", warnings)
+        self.assertIn("Consulte os logs", warnings)
 
 
 if __name__ == "__main__":

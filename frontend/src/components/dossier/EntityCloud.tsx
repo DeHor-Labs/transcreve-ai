@@ -22,7 +22,7 @@ export function EntityCloud({ entities, label, variant = 'default' }: EntityClou
       </p>
       <div className="flex flex-wrap gap-2" role="list" aria-label={label}>
         {entities.map((entity, i) => (
-          <span key={i} role="listitem" className={[tagBase, tagStyle].join(' ')}>
+          <span key={`${entity}-${i}`} role="listitem" className={[tagBase, tagStyle].join(' ')}>
             {entity}
           </span>
         ))}

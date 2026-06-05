@@ -91,6 +91,15 @@ class RegistryGetProvider(unittest.TestCase):
         self.assertIn("ProviderQueNaoExiste", mensagem)
         self.assertIn("video_kb.providers.local_provider", mensagem)
 
+    def test_referencia_sem_classe_levanta_importerror_claro(self) -> None:
+        with patch.dict(_REGISTRY, {"quebrado": "video_kb.providers.local_provider"}):
+            with self.assertRaises(ImportError) as ctx:
+                load_provider("quebrado")
+
+        mensagem = str(ctx.exception)
+        self.assertIn("quebrado", mensagem)
+        self.assertIn("modulo:Classe", mensagem)
+
 
 class RegistryNomeInvalido(unittest.TestCase):
     """Provider desconhecido deve levantar KeyError com mensagem descritiva."""

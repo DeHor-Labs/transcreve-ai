@@ -52,6 +52,11 @@ def load_provider(
         raise KeyError(f"Provider '{name}' nao encontrado. Disponiveis: {available}")
 
     ref = _REGISTRY[name]
+    if ":" not in ref:
+        raise ImportError(
+            f"Provider '{name}' tem referencia invalida '{ref}'. "
+            "Use o formato 'modulo:Classe'."
+        )
     module_path, class_name = ref.rsplit(":", 1)
 
     try:

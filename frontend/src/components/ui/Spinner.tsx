@@ -13,11 +13,9 @@ export function Spinner({ size = 'md', className = '' }: SpinnerProps) {
       height={px}
       viewBox="0 0 24 24"
       fill="none"
-      className={className}
+      className={['spin', className].filter(Boolean).join(' ')}
       aria-hidden="true"
-      style={{ animation: 'spin 0.8s linear infinite' }}
     >
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <circle
         cx="12" cy="12" r="10"
         stroke="currentColor"

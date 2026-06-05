@@ -166,6 +166,30 @@ class TestEstimateCost(unittest.TestCase):
         self.assertIn("synthesis_usd", cost)
         self.assertIn("total_usd", cost)
 
+    def test_estimate_cost_permite_assumptions_customizadas(self) -> None:
+        custom = {
+            "test_provider": {
+                "whisper_per_min": 0.0,
+                "vision_in_per_1k": 1.0,
+                "synth_in_per_1k": 1.0,
+                "synth_out_per_1k": 1.0,
+            }
+        }
+
+        cost = self.estimate(
+            provider_name="test_provider",
+            duration_seconds=0.0,
+            frames_with_visual_note=1,
+            transcript_len_chars=0,
+            price_table=custom,
+            vision_tokens_per_frame=1000,
+            synth_overhead_tokens=1000,
+            synth_output_tokens=1000,
+        )
+
+        self.assertEqual(cost["vision_usd"], 1.0)
+        self.assertEqual(cost["synthesis_usd"], 2.0)
+
 
 class TestExtractMetrics(unittest.TestCase):
     def _make_result(self, **kwargs: Any) -> Any:
@@ -247,6 +271,15 @@ class TestExtractMetrics(unittest.TestCase):
         from video_kb.models import KnowledgeSynthesis
 
         synth = KnowledgeSynthesis(summary="s", raw={"mode": "llm"})
+        result = self._make_result(synthesis=synth)
+        m = extract_metrics(result)
+        self.assertEqual(m["synthesis_mode"], "llm")
+
+    def test_raw_nao_dict_nao_quebra_synthesis_mode(self) -> None:
+        from video_kb.eval.metrics import extract_metrics
+        from video_kb.models import KnowledgeSynthesis
+
+        synth = KnowledgeSynthesis(summary="s", raw="modo local textual")  # type: ignore[arg-type]
         result = self._make_result(synthesis=synth)
         m = extract_metrics(result)
         self.assertEqual(m["synthesis_mode"], "llm")

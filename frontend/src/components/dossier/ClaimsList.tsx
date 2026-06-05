@@ -26,8 +26,8 @@ function Section({ title, items, icon }: { title: string; items: string[]; icon:
 export function ClaimsList({ claims, actionItems, questions }: ClaimsListProps) {
   return (
     <div className="flex flex-col gap-6">
-      <Section title="Afirmacoes" items={claims} icon="" />
-      <Section title="Proximos passos" items={actionItems} icon="" />
+      <Section title="Afirmações" items={claims} icon="" />
+      <Section title="Próximos passos" items={actionItems} icon="" />
       <Section title="Perguntas levantadas" items={questions} icon="" />
     </div>
   );

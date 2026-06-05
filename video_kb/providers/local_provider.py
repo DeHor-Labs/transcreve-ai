@@ -162,7 +162,7 @@ class LocalProvider(AIProvider):
 
         return KnowledgeSynthesis(
             summary=_extract_summary(transcript, metadata),
-            chapters=_extract_chapters(transcript),
+            chapters=_extract_chapters(transcript, metadata.duration),
             entities=_extract_entities(transcript, frames),
             tools_or_products=_extract_tools_products(transcript, frames),
             claims=_extract_claims(transcript),
@@ -283,7 +283,10 @@ def _extract_summary(transcript: str, metadata: SourceMetadata) -> str:
     return prefix + " ".join(selected[:4])
 
 
-def _extract_chapters(transcript: str) -> list[dict[str, Any]]:
+def _extract_chapters(
+    transcript: str,
+    duration_seconds: float | None = None,
+) -> list[dict[str, Any]]:
     if not transcript.strip():
         return []
 
@@ -301,7 +304,8 @@ def _extract_chapters(transcript: str) -> list[dict[str, Any]]:
         chunk = " ".join(words[index : index + chunk_size])
         # Pega as primeiras palavras significativas como titulo estimado
         preview = _first_meaningful_sentence(chunk, 80)
-        start_secs = int((index / total) * 60 * 10)  # estimativa proporcional a 10 min
+        duration = duration_seconds if duration_seconds and duration_seconds > 0 else 600.0
+        start_secs = int((index / total) * duration)
         chapters.append(
             {
                 "start": format_timestamp(float(start_secs)),

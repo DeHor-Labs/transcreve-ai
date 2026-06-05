@@ -96,8 +96,6 @@ class TestEvalRunnerMocked(unittest.TestCase):
             mock_pipeline = MagicMock()
             mock_pipeline.return_value.run.return_value = mock_result
 
-            MagicMock()
-
             with patch.object(runner, "_run_one") as mock_run_one:
                 from video_kb.eval.runner import CaseResult
 

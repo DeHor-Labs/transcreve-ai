@@ -43,7 +43,8 @@ def extract_metrics(result: AnalysisResult) -> dict[str, Any]:
     questions_count = len(s.questions) if s.questions else 0
 
     # Modo de sintese
-    synthesis_mode = "local" if (s.raw or {}).get("mode") == "local" else "llm"
+    raw_mode = s.raw.get("mode") if isinstance(s.raw, dict) else None
+    synthesis_mode = "local" if raw_mode == "local" else "llm"
 
     return {
         "duration_seconds": result.metadata.duration or 0.0,
