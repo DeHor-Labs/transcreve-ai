@@ -1,12 +1,11 @@
 import re
 import subprocess
 from pathlib import Path
-from typing import List, Tuple
 
 from .utils import which
 
 
-def available_tesseract_languages() -> List[str]:
+def available_tesseract_languages() -> list[str]:
     if not which("tesseract"):
         return []
     proc = subprocess.run(
@@ -14,8 +13,7 @@ def available_tesseract_languages() -> List[str]:
         text=True,
         encoding="utf-8",
         errors="replace",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
     )
     output = (proc.stdout or "") + "\n" + (proc.stderr or "")
     return sorted(
@@ -25,7 +23,7 @@ def available_tesseract_languages() -> List[str]:
     )
 
 
-def choose_language(preferred: str) -> Tuple[str, str]:
+def choose_language(preferred: str) -> tuple[str, str]:
     available = set(available_tesseract_languages())
     if not available:
         return "", "tesseract is not available; OCR skipped"
@@ -35,8 +33,8 @@ def choose_language(preferred: str) -> Tuple[str, str]:
     if supported:
         return "+".join(supported), ""
     if "eng" in available:
-        return "eng", "Requested OCR language '%s' is unavailable; using eng" % preferred
-    return sorted(available)[0], "Requested OCR language '%s' is unavailable" % preferred
+        return "eng", f"Requested OCR language '{preferred}' is unavailable; using eng"
+    return sorted(available)[0], f"Requested OCR language '{preferred}' is unavailable"
 
 
 def ocr_image(image_path: Path, language: str) -> str:
@@ -47,8 +45,7 @@ def ocr_image(image_path: Path, language: str) -> str:
         text=True,
         encoding="utf-8",
         errors="replace",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
     )
     if proc.returncode != 0:
         return ""

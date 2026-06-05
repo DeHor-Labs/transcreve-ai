@@ -37,6 +37,15 @@ metadata + transcript + frames -> synthesis
 synthesis + raw observations -> JSON + Markdown
 ```
 
+### Ingestion strategy (source handling)
+
+1. O pipeline classifica a origem como **URL** ou **arquivo local**.
+2. Para URL, usa `yt-dlp` com o selector padrão (`bv*+ba/b`) e baixa para `source.<ext>`.
+3. Para arquivo local, copia para `out/source.<ext>`.
+4. Cookies são opcionais via `--cookies-browser` ou `--cookies`.
+5. Fallback operacional recomendado: baixar o ativo por cliente/operador e reapresentar como caminho local quando a origem URL falhar no extrator.
+6. O pipeline atual não puxa captions automaticamente; quando necessário, o fallback de conteúdo textual é a transcrição de áudio por IA.
+
 ## Design Choices
 
 - Keep downloaded media and outputs out of Git.

@@ -17,7 +17,7 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
-    auto_incremental_review: false
+    auto_incremental_review: true
     base_branches:
       - main
 
@@ -52,6 +52,12 @@ reviews:
         quando evitar CI pesado em docs-only fizer sentido.
 
   path_filters:
+    # Keep generated and bulky artifacts out of review without shadowing
+    # path_instructions for runtime code, frontend, eval modules, or tests.
+    - "!README.md"
+    - "!docs/**"
+    - "!skills/**"
+    - "!**/*.txt"
     - "!**/node_modules/**"
     - "!**/.venv/**"
     - "!**/__pycache__/**"

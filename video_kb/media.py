@@ -1,7 +1,6 @@
 import json
 import math
 from pathlib import Path
-from typing import List
 
 from .utils import CommandError, ensure_dir, run_command
 
@@ -43,7 +42,7 @@ def extract_audio(media_path: Path, audio_path: Path) -> Path:
     return audio_path
 
 
-def _sample_timestamps(duration: float, interval: float, max_frames: int) -> List[float]:
+def _sample_timestamps(duration: float, interval: float, max_frames: int) -> list[float]:
     duration = max(0.0, duration)
     interval = max(1.0, interval)
     if duration <= 0:
@@ -78,14 +77,14 @@ def extract_frames(
     interval: float = 5.0,
     max_frames: int = 80,
     width: int = 1280,
-) -> List[Path]:
+) -> list[Path]:
     ensure_dir(frames_dir)
     frame_paths = []
     timestamps = _sample_timestamps(duration, interval, max_frames)
     digits = max(4, int(math.log10(max(1, len(timestamps)))) + 1)
 
     for index, timestamp in enumerate(timestamps, start=1):
-        output = frames_dir / ("frame_%0*d_%s.jpg" % (digits, index, _safe_ts(timestamp)))
+        output = frames_dir / (f"frame_{index:0{digits}d}_{_safe_ts(timestamp)}.jpg")
         command = [
             "ffmpeg",
             "-y",
@@ -96,7 +95,7 @@ def extract_frames(
             "-frames:v",
             "1",
             "-vf",
-            "scale=%d:-2" % width,
+            f"scale={width}:-2",
             "-q:v",
             "3",
             str(output),
@@ -110,7 +109,7 @@ def extract_frames(
     return frame_paths
 
 
-def split_audio(audio_path: Path, chunks_dir: Path, segment_seconds: int = 600) -> List[Path]:
+def split_audio(audio_path: Path, chunks_dir: Path, segment_seconds: int = 600) -> list[Path]:
     ensure_dir(chunks_dir)
     pattern = chunks_dir / "chunk_%03d.mp3"
     command = [
@@ -133,4 +132,4 @@ def split_audio(audio_path: Path, chunks_dir: Path, segment_seconds: int = 600) 
 
 
 def _safe_ts(timestamp: float) -> str:
-    return ("%08.2f" % timestamp).replace(".", "s")
+    return (f"{timestamp:08.2f}").replace(".", "s")

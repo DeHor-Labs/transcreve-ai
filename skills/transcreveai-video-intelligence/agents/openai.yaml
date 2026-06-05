@@ -1,0 +1,4 @@
+interface:
+  display_name: "Video Intelligence"
+  short_description: "Transforma vídeo em knowledge.md/analysis.json e habilita index/ask para busca semântica."
+  default_prompt: "Faça o fluxo de video intelligence: sources probe, depois analyze, leia knowledge.md e analysis.json, e rode index/ask conforme necessário."
