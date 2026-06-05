@@ -9,8 +9,10 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from typing import TypedDict, Unpack
+from typing import TypedDict
 from unittest.mock import MagicMock, patch
+
+from typing_extensions import Unpack
 
 from video_kb.embeddings.store import SearchHit
 
