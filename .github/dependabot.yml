@@ -28,3 +28,18 @@ updates:
     commit-message:
       prefix: chore(deps)
       include: scope
+  - package-ecosystem: npm
+    directory: "/frontend"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:10"
+      timezone: "America/Sao_Paulo"
+    open-pull-requests-limit: 5
+    labels:
+      - deps
+      - deps/npm
+      - frontend
+    commit-message:
+      prefix: chore(deps)
+      include: scope

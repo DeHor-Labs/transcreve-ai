@@ -15,6 +15,7 @@ build/
 .mypy_cache/
 .hypothesis/
 .coverage
+coverage.xml
 htmlcov/
 coverage/
 node_modules/

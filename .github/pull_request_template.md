@@ -4,7 +4,9 @@
 
 ## Validation
 
-- [ ] `python -m unittest discover -s tests`
+- [ ] `python -m ruff check video_kb tests`
+- [ ] `python -m mypy video_kb tests`
+- [ ] `python -m pytest tests`
 - [ ] `python -m compileall video_kb tests`
 
 ## Safety

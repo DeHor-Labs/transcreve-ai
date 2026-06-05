@@ -2,12 +2,14 @@ name: CI
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths-ignore:
@@ -24,12 +26,64 @@ on:
       - ".coderabbit.yaml"
 
 jobs:
-  test:
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@v4.0.1
+        id: filter
+        with:
+          filters: |
+            python:
+              - ".github/workflows/ci.yml"
+              - "pyproject.toml"
+              - "uv.lock"
+              - "video_kb/**"
+              - "tests/**"
+            frontend:
+              - ".github/workflows/ci.yml"
+              - "frontend/**"
+
+  quality:
+    name: Quality
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,obsidian,web,rag]"
+      - name: Ruff lint
+        run: python -m ruff check video_kb tests
+      - name: MyPy typecheck
+        run: python -m mypy video_kb tests
+      - name: Compile Python files
+        run: python -m compileall video_kb tests
+
+  python-tests:
+    name: Python tests (${{ matrix.python-version }})
+    needs: [changes, quality]
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
-
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -37,6 +91,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -44,33 +100,50 @@ jobs:
       - name: Install package
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e .[dev,obsidian,web,rag]
-      - name: Ruff lint
-        run: python -m ruff check video_kb tests
-      - name: Ruff complexity gate (C90 - warning)
+          python -m pip install -e ".[dev,obsidian,web,rag]"
+      - name: Pytest
+        run: python -m pytest tests
+
+  coverage:
+    name: Coverage
+    needs: [changes, python-tests]
+    if: >
+      always() &&
+      needs.python-tests.result == 'success' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.ref == 'refs/heads/main' ||
+       (github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'coverage')))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install system dependencies
         run: |
-          python -m ruff check --select C90 video_kb tests
-        continue-on-error: true
-      - name: MyPy typecheck (warning while project is stabilized)
-        run: python -m mypy video_kb tests
-        continue-on-error: true
-      - name: Compile Python files
-        run: python -m compileall video_kb tests
-      - name: Smoke tests
-        run: python -m pytest --maxfail=1 tests/smoke
-      - name: Legacy unittest suite
-        run: python -m unittest discover -s tests
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg tesseract-ocr
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,obsidian,web,rag]"
       - name: Pytest with coverage
         run: |
           python -m pytest \
-            --maxfail=1 \
             --cov=video_kb \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml
 
   frontend:
+    name: Frontend
     runs-on: ubuntu-latest
-    needs: test
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend == 'true'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -78,6 +151,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Enable pnpm
         run: corepack enable
       - name: Install frontend deps
