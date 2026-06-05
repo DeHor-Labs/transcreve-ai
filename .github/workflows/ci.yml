@@ -2,12 +2,15 @@ name: CI
 
 permissions:
   contents: read
+  # Required by dorny/paths-filter to read PR metadata for changed-file filtering.
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths-ignore:
@@ -17,6 +20,7 @@ on:
       - ".coderabbit.yaml"
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, labeled]
     paths-ignore:
       - "README.md"
       - "docs/**"
@@ -24,62 +28,142 @@ on:
       - ".coderabbit.yaml"
 
 jobs:
-  test:
+  changes:
+    name: Changes
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.11", "3.12"]
-
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+      frontend: ${{ steps.filter.outputs.frontend }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v6
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d
+        id: filter
+        with:
+          filters: |
+            python:
+              - ".github/workflows/ci.yml"
+              - "pyproject.toml"
+              - "uv.lock"
+              - "video_kb/**"
+              - "tests/**"
+            frontend:
+              - ".github/workflows/ci.yml"
+              - "frontend/**"
+
+  quality:
+    name: Quality
+    needs: changes
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      needs.changes.outputs.python == 'true' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'coverage'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.14"
+      - name: Install uv
+        run: python -m pip install uv
+      - name: Install package
+        run: |
+          uv sync --frozen --python 3.14 --extra dev --extra obsidian --extra web --extra rag
+      - name: Ruff lint
+        run: uv run --python 3.14 python -m ruff check video_kb tests
+      - name: MyPy typecheck
+        run: uv run --python 3.14 python -m mypy video_kb tests
+      - name: Compile Python files
+        run: uv run --python 3.14 python -m compileall video_kb tests
+
+  python-tests:
+    name: Python tests (${{ matrix.python-version }})
+    needs: [changes, quality]
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      needs.changes.outputs.python == 'true' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'coverage'))
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg tesseract-ocr
+      - name: Install uv
+        run: python -m pip install uv
       - name: Install package
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e .[dev,obsidian,web,rag]
-      - name: Ruff lint
-        run: python -m ruff check video_kb tests
-      - name: Ruff complexity gate (C90 - warning)
+          uv sync --frozen --python ${{ matrix.python-version }} --extra dev --extra obsidian --extra web --extra rag
+      - name: Pytest
+        run: uv run --python ${{ matrix.python-version }} python -m pytest tests
+
+  coverage:
+    name: Coverage
+    needs: [changes, python-tests]
+    if: >
+      always() &&
+      needs.python-tests.result == 'success' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.ref == 'refs/heads/main' ||
+       (github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'coverage')))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.14"
+      - name: Install system dependencies
         run: |
-          python -m ruff check --select C90 video_kb tests
-        continue-on-error: true
-      - name: MyPy typecheck (warning while project is stabilized)
-        run: python -m mypy video_kb tests
-        continue-on-error: true
-      - name: Compile Python files
-        run: python -m compileall video_kb tests
-      - name: Smoke tests
-        run: python -m pytest --maxfail=1 tests/smoke
-      - name: Legacy unittest suite
-        run: python -m unittest discover -s tests
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg tesseract-ocr
+      - name: Install uv
+        run: python -m pip install uv
+      - name: Install package
+        run: |
+          uv sync --frozen --python 3.14 --extra dev --extra obsidian --extra web --extra rag
       - name: Pytest with coverage
         run: |
-          python -m pytest \
-            --maxfail=1 \
+          uv run --python 3.14 python -m pytest \
             --cov=video_kb \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml
 
   frontend:
+    name: Frontend
     runs-on: ubuntu-latest
-    needs: test
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend == 'true'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
         with:
-          node-version: "20"
-      - name: Enable pnpm
-        run: corepack enable
+          version: "10.34.1"
+          run_install: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Install frontend deps
         working-directory: frontend
         run: pnpm install --frozen-lockfile

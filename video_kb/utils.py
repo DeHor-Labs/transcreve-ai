@@ -6,7 +6,7 @@ import subprocess
 import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 class CommandError(RuntimeError):
@@ -17,7 +17,7 @@ class CommandError(RuntimeError):
         super().__init__("Command failed ({}): {}".format(returncode, " ".join(command)))
 
 
-def run_command(command: list[str], cwd: Optional[Path] = None) -> subprocess.CompletedProcess:
+def run_command(command: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess:
     proc = subprocess.run(
         command,
         cwd=str(cwd) if cwd else None,
@@ -192,7 +192,7 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def which(name: str) -> Optional[str]:
+def which(name: str) -> str | None:
     for directory in os.environ.get("PATH", "").split(os.pathsep):
         candidate = Path(directory) / name
         if candidate.exists() and os.access(str(candidate), os.X_OK):

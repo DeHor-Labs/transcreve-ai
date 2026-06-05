@@ -3,7 +3,6 @@ import socket
 from ipaddress import ip_address
 from os import getenv
 from pathlib import Path
-from typing import Optional
 from urllib.parse import unquote, urlparse
 
 from .models import SourceMetadata
@@ -103,7 +102,7 @@ def _metadata_from_info(source: str, info: dict) -> SourceMetadata:
     )
 
 
-def _find_downloaded_file(out_dir: Path) -> Optional[Path]:
+def _find_downloaded_file(out_dir: Path) -> Path | None:
     candidates = [
         path
         for path in out_dir.glob("source.*")
@@ -117,8 +116,8 @@ def _find_downloaded_file(out_dir: Path) -> Optional[Path]:
 def fetch_media(
     source: str,
     out_dir: Path,
-    cookies_browser: Optional[str] = None,
-    cookies: Optional[str] = None,
+    cookies_browser: str | None = None,
+    cookies: str | None = None,
     video_format: str = "bv*+ba/b",
 ) -> tuple[Path, SourceMetadata]:
     ensure_dir(out_dir)
