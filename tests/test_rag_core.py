@@ -161,6 +161,15 @@ class TestChunkDossier(unittest.TestCase):
         cap = next(c for c in chunks if c.chunk_type == "chapter")
         self.assertAlmostEqual(cap.chapter_start, 42.5)
 
+    def test_chapter_start_nao_finito_nao_e_inserido(self) -> None:
+        from video_kb.embeddings.chunker import chunk_dossier
+
+        chapters = [{"title": "Cap", "notes": "notas", "start": float("nan")}]
+        analysis = _make_analysis(chapters=chapters)
+        chunks = chunk_dossier(analysis, "run-001")
+        cap = next(c for c in chunks if c.chunk_type == "chapter")
+        self.assertIsNone(cap.chapter_start)
+
     def test_source_title_e_url_nos_chunks(self) -> None:
         from video_kb.embeddings.chunker import chunk_dossier
 
@@ -363,6 +372,28 @@ class TestSearchRetrieval(unittest.TestCase):
         self.assertNotIn("run-B", run_ids_nos_hits)
         self.assertIn("run-A", run_ids_nos_hits)
 
+    def test_search_run_ids_vazio_nao_filtra(self) -> None:
+        from video_kb.embeddings.rag import index_run, search
+
+        provider = _make_mock_provider(dim=4)
+        db = _tmp_db()
+
+        for rid in ("run-A", "run-B"):
+            index_run(
+                run_id=rid,
+                analysis=_make_analysis(summary=f"Resumo de {rid}."),
+                provider=provider,
+                provider_name="mock",
+                model_name="mock-model",
+                db_path=db,
+            )
+
+        all_hits = search("Resumo", provider, db_path=db, top_k=10)
+        empty_filter_hits = search("Resumo", provider, db_path=db, top_k=10, run_ids=[])
+
+        self.assertEqual(len(all_hits), len(empty_filter_hits))
+        self.assertEqual({h.run_id for h in all_hits}, {h.run_id for h in empty_filter_hits})
+
 
 # ---------------------------------------------------------------------------
 # 4. Provider sem embed levanta erro claro
@@ -536,6 +567,32 @@ class TestAskFunction(unittest.TestCase):
             db_path=db,
         )
         self.assertEqual(result.question, "Pergunta de teste?")
+
+
+class TestCallCompleteFallback(unittest.TestCase):
+    def test_call_complete_fallback_para_openai(self) -> None:
+        from types import SimpleNamespace
+
+        from video_kb.embeddings.rag import _call_complete
+
+        provider = MagicMock()
+        provider.complete.side_effect = RuntimeError("provider down")
+        provider._client = SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(
+                    create=MagicMock(
+                        return_value=SimpleNamespace(
+                            choices=[
+                                SimpleNamespace(message=SimpleNamespace(content="resp da api"))
+                            ]
+                        )
+                    )
+                )
+            )
+        )
+
+        out = _call_complete(provider, "pergunta")
+        self.assertEqual(out, "resp da api")
 
 
 if __name__ == "__main__":

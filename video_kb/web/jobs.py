@@ -91,7 +91,22 @@ class ActiveJob:
     markdown_path: str | None = None
     source_hash: str | None = None
     language: str | None = None
-    _sse_queue: asyncio.Queue = field(default_factory=asyncio.Queue)  # type: ignore[type-arg]
+    _sse_subscribers: set[asyncio.Queue[JobProgress | None]] = field(
+        default_factory=set,
+        repr=False,
+    )
+
+    def subscribe(self) -> asyncio.Queue[JobProgress | None]:
+        queue: asyncio.Queue[JobProgress | None] = asyncio.Queue()
+        self._sse_subscribers.add(queue)
+        return queue
+
+    def unsubscribe(self, queue: asyncio.Queue[JobProgress | None]) -> None:
+        self._sse_subscribers.discard(queue)
+
+    def publish(self, event: JobProgress | None) -> None:
+        for queue in list(self._sse_subscribers):
+            queue.put_nowait(event)
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +137,61 @@ class JobStore:
     def list_active(self) -> list[ActiveJob]:
         return list(self._jobs.values())
 
+    def queue_size(self) -> int:
+        return self._queue.qsize()
+
+
+def _client_error_message(exc: Exception) -> str:
+    raw = str(exc).strip()
+    if not raw:
+        return "Falha ao processar o video. Verifique a fonte e tente novamente."
+    raw = re.sub(r"https?://\S+", "[url removida]", raw)
+    raw = re.sub(r"/tmp/vkb_upload_[\w.-]+", "[upload temporario]", raw)
+    return raw[:500]
+
+
+def _persist_failed_job(job: ActiveJob, index_db: str | None) -> None:
+    try:
+        from ..index import RunIndex, resolve_index_path
+        from ..utils import sha256_file, sha256_url
+
+        source_hash = job.source_hash
+        if not source_hash:
+            if job.source.lower().startswith(("http://", "https://")):
+                source_hash = sha256_url(job.source)
+            else:
+                source_path = Path(job.source)
+                if source_path.is_file():
+                    source_hash = sha256_file(source_path)
+
+        if not source_hash:
+            return
+
+        with RunIndex(resolve_index_path(index_db)) as idx:
+            if idx.get_run(job.job_id) is not None:
+                idx.update_run(
+                    job.job_id,
+                    status="failed",
+                    finished_at=job.finished_at or _iso_now(),
+                    output_dir=job.output_dir or "",
+                    storage_backend=job.storage_backend,
+                )
+            else:
+                idx.register(
+                    run_id=job.job_id,
+                    source=job.source,
+                    source_hash=source_hash,
+                    provider=job.provider,
+                    ai_mode=job.ai_mode,
+                    status="failed",
+                    created_at=job.created_at,
+                    finished_at=job.finished_at or _iso_now(),
+                    output_dir=job.output_dir or "",
+                    storage_backend=job.storage_backend,
+                )
+    except Exception:  # noqa: BLE001
+        pass
+
 
 # ---------------------------------------------------------------------------
 # Worker asyncio
@@ -151,7 +221,7 @@ async def worker_task(
                 event = build_progress_event(step, detail)
                 j.progress = event
                 j.progress_history.append(event)
-                loop.call_soon_threadsafe(j._sse_queue.put_nowait, event)
+                loop.call_soon_threadsafe(j.publish, event)
 
             return progress_callback
 
@@ -162,6 +232,7 @@ async def worker_task(
             on_progress=make_progress_callback(job),  # type: ignore[call-arg]
             index_db=index_db,
             language=job.language,
+            run_id=job.job_id,
         )
         pipeline = VideoKnowledgePipeline(options)
 
@@ -182,25 +253,27 @@ async def worker_task(
             job.analysis_path = str(Path(result.workdir) / "analysis.json")
             job.markdown_path = str(Path(result.workdir) / "knowledge.md")
 
-            loop.call_soon_threadsafe(job._sse_queue.put_nowait, done_event)
-            loop.call_soon_threadsafe(job._sse_queue.put_nowait, None)  # sentinel
+            job.publish(done_event)
+            job.publish(None)  # sentinel
 
         except Exception as exc:  # noqa: BLE001
             current_pct = job.progress.pct if job.progress else 0
+            safe_detail = _client_error_message(exc)
             failed_event = JobProgress(
                 step="failed",
-                detail=str(exc),
+                detail=safe_detail,
                 pct=current_pct,
                 status="failed",
                 ts=_iso_now(),
             )
             job.status = "failed"
-            job.error = str(exc)
+            job.error = safe_detail
             job.finished_at = _iso_now()
             job.progress = failed_event
             job.progress_history.append(failed_event)
-            loop.call_soon_threadsafe(job._sse_queue.put_nowait, failed_event)
-            loop.call_soon_threadsafe(job._sse_queue.put_nowait, None)  # sentinel
+            _persist_failed_job(job, index_db)
+            job.publish(failed_event)
+            job.publish(None)  # sentinel
 
         finally:
             # Remove upload temporario se for arquivo /tmp

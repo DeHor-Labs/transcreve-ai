@@ -741,11 +741,27 @@ def _cmd_runs_rm(args: argparse.Namespace) -> None:
 
     if args.purge and output_dir:
         dir_path = Path(output_dir)
+        if not _is_within_cli_scope(output_dir, Path.cwd()):
+            print(
+                "Aviso: caminho fora do escopo atual; pulando delecao de arquivos.",
+                file=sys.stderr,
+            )
+            return
         if dir_path.exists():
             shutil.rmtree(dir_path, ignore_errors=True)
             print(f"Diretorio '{output_dir}' deletado.")
         else:
             print(f"Aviso: diretorio '{output_dir}' nao encontrado no disco.")
+
+
+def _is_within_cli_scope(raw_output_dir: str, scope_root: Path) -> bool:
+    """Evita remover pastas fora do escopo seguro do CLI."""
+    try:
+        root = scope_root.resolve()
+        candidate = (root / Path(raw_output_dir)).resolve()
+    except OSError:
+        return False
+    return candidate != root and candidate.is_relative_to(root)
 
 
 # ---------------------------------------------------------------------------

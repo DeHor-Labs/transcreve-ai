@@ -57,6 +57,26 @@ class LoadStorageFilesystem(unittest.TestCase):
             if original:
                 _REGISTRY["obsidian"] = original
 
+    def test_backend_com_classe_ausente_levanta_import_error(self) -> None:
+        """
+        Quando o registro aponta para uma classe inexistente, a falha deve ser clara.
+        """
+
+        from video_kb.storage.registry import _REGISTRY
+
+        original = _REGISTRY.get("obsidian_fake_test")
+        _REGISTRY["obsidian_fake_test"] = "video_kb.storage.obsidian:ClasseInexistente"
+        try:
+            from video_kb.storage import load_storage
+
+            with self.assertRaises(ImportError) as ctx:
+                load_storage("obsidian_fake_test")
+            self.assertIn("classe inexistente", str(ctx.exception))
+        finally:
+            del _REGISTRY["obsidian_fake_test"]
+            if original:
+                _REGISTRY["obsidian_fake_test"] = original
+
 
 class RegisterStorageExterno(unittest.TestCase):
     def test_register_storage_adiciona_ao_registry(self) -> None:

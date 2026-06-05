@@ -63,8 +63,28 @@ def create_app(
     # Serve frontend/dist se existir (SPA)
     _dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
     if _dist.is_dir():
+        from starlette.datastructures import Headers
+        from starlette.exceptions import HTTPException as StarletteHTTPException
         from starlette.staticfiles import StaticFiles
 
-        app.mount("/", StaticFiles(directory=str(_dist), html=True), name="spa")
+        class SPAStaticFiles(StaticFiles):
+            async def get_response(self, path: str, scope: dict[str, object]):  # type: ignore[override]
+                try:
+                    response = await super().get_response(path, scope)
+                except StarletteHTTPException as exc:
+                    if exc.status_code != 404 or scope.get("method") not in {"GET", "HEAD"}:
+                        raise
+                    headers = Headers(scope=scope)
+                    if "text/html" not in headers.get("accept", ""):
+                        raise
+                    return await super().get_response("index.html", scope)
+
+                if response.status_code == 404 and scope.get("method") in {"GET", "HEAD"}:
+                    headers = Headers(scope=scope)
+                    if "text/html" in headers.get("accept", ""):
+                        return await super().get_response("index.html", scope)
+                return response
+
+        app.mount("/", SPAStaticFiles(directory=str(_dist), html=True), name="spa")
 
     return app

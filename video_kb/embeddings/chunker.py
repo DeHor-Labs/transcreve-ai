@@ -7,6 +7,7 @@ prontos para serem enviados ao provider de embed.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -96,8 +97,7 @@ def chunk_dossier(
         text = f"{title}: {notes}".strip(": ")
         if not text:
             continue
-        start = ch.get("start")
-        chapter_start = float(start) if start is not None else None
+        chapter_start = _coerce_finite_float(ch.get("start"))
         chunks.append(_make_chunk(text, "chapter", chapter_start))
 
     # ------------------------------------------------------------------
@@ -149,3 +149,16 @@ def chunk_dossier(
             start = next_start
 
     return chunks
+
+
+def _coerce_finite_float(value: Any) -> float | None:
+    """Converte para float e retorna apenas se o valor for finito."""
+    if value is None:
+        return None
+    try:
+        candidate = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(candidate):
+        return None
+    return candidate

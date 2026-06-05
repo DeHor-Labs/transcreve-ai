@@ -63,7 +63,7 @@ class LocalProvider(AIProvider):
     ) -> TranscribeResult:
         model = self._get_whisper()
 
-        from ..media import split_audio  # lazy - evita import circular no topo
+        from ..media import probe_duration, split_audio  # lazy - evita import circular no topo
 
         if audio_path.stat().st_size > AUDIO_CHUNK_LIMIT_BYTES:
             chunks = split_audio(audio_path, chunks_dir)
@@ -79,7 +79,7 @@ class LocalProvider(AIProvider):
             texts.append(chunk_text)
             segments.extend(chunk_segments)
             if len(chunks) > 1:
-                offset += 600.0
+                offset += _safe_chunk_duration(chunk, fallback=600.0, probe=probe_duration)
 
         text = "\n".join(part for part in texts if part).strip()
         return TranscribeResult(text=text, segments=segments)
@@ -400,3 +400,11 @@ def _extract_questions(transcript: str) -> list[str]:
         if len(questions) >= 10:
             break
     return questions
+
+
+def _safe_chunk_duration(chunk: Path, *, fallback: float, probe: Any) -> float:
+    try:
+        duration = float(probe(chunk))
+    except Exception:  # noqa: BLE001
+        return fallback
+    return duration if duration > 0 else fallback

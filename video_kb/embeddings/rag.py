@@ -11,11 +11,14 @@ Funcao principal: ask(question, ...) -> AskResult
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .store import EmbeddingStore, SearchHit
+
+_LOGGER = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # DTOs
@@ -229,58 +232,68 @@ def _call_complete(provider: Any, prompt: str) -> str:
 
     Retorna string com a resposta gerada.
     """
-    # Tenta interface direta `complete` se existir
-    if hasattr(provider, "complete"):
+    strategies = (
+        ("provider.complete", _complete_direct),
+        ("client.chat", _complete_openai),
+        ("model.generate_content", _complete_gemini),
+        ("anthropic", _complete_anthropic),
+    )
+    for label, strategy in strategies:
         try:
-            return str(provider.complete(prompt))
+            response = strategy(provider, prompt)
         except Exception:  # noqa: BLE001
-            pass
+            _LOGGER.debug("fallback %s falhou", label, exc_info=True)
+            continue
+        if response:
+            return response
 
-    # Tenta via OpenAI client (OpenAIProvider expoe _client)
-    if hasattr(provider, "_client"):
-        try:
-            client = provider._client
-            # OpenAI SDK
-            if hasattr(client, "chat"):
-                resp = client.chat.completions.create(
-                    model=_get_vision_model(provider),
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.2,
-                    max_tokens=1024,
-                )
-                return resp.choices[0].message.content or ""
-        except Exception:  # noqa: BLE001
-            pass
-
-    # Tenta via Gemini client
-    if hasattr(provider, "_model"):
-        try:
-            model = provider._model
-            if hasattr(model, "generate_content"):
-                resp = model.generate_content(prompt)
-                return resp.text or ""
-        except Exception:  # noqa: BLE001
-            pass
-
-    # Tenta via Anthropic client
-    if hasattr(provider, "_anthropic"):
-        try:
-            client = provider._anthropic
-            resp = client.messages.create(
-                model=_get_vision_model(provider),
-                max_tokens=1024,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            return resp.content[0].text if resp.content else ""
-        except Exception:  # noqa: BLE001
-            pass
-
+    _LOGGER.info("falha em todos os caminhos de sintese no _call_complete")
     return "Nao foi possivel gerar resposta: provider de sintese nao disponivel."
+
+
+def _complete_direct(provider: Any, prompt: str) -> str:
+    complete = getattr(provider, "complete", None)
+    if not callable(complete):
+        return ""
+    return str(complete(prompt))
+
+
+def _complete_openai(provider: Any, prompt: str) -> str:
+    client = getattr(provider, "_client", None)
+    if not hasattr(client, "chat"):
+        return ""
+    resp = client.chat.completions.create(
+        model=_get_vision_model(provider),
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,
+        max_tokens=1024,
+    )
+    return resp.choices[0].message.content or ""
+
+
+def _complete_gemini(provider: Any, prompt: str) -> str:
+    model = getattr(provider, "_model", None)
+    if not hasattr(model, "generate_content"):
+        return ""
+    resp = model.generate_content(prompt)
+    return resp.text or ""
+
+
+def _complete_anthropic(provider: Any, prompt: str) -> str:
+    client = getattr(provider, "_anthropic", None)
+    if client is None:
+        return ""
+    resp = client.messages.create(
+        model=_get_vision_model(provider),
+        max_tokens=1024,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return resp.content[0].text if resp.content else ""
 
 
 def _get_vision_model(provider: Any) -> str:
     """Tenta obter o modelo configurado no provider; usa fallback por tipo."""
-    for attr in ("_vision_model", "_model_name", "model"):
+    for attr in ("vision_model", "_vision_model", "_model_name", "model"):
         val = getattr(provider, attr, None)
         if val and isinstance(val, str):
             return val

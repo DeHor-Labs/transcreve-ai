@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import tempfile
 import uuid
 from pathlib import Path
@@ -32,11 +34,23 @@ from ..schemas import (
 )
 
 router = APIRouter()
+_UPLOAD_CHUNK_BYTES = 1024 * 1024
+_MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
+_ALLOWED_UPLOAD_SUFFIXES = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".flv"}
+_MIME_SUFFIXES = {
+    "video/mp4": ".mp4",
+    "video/quicktime": ".mov",
+    "video/x-matroska": ".mkv",
+    "video/x-msvideo": ".avi",
+    "video/webm": ".webm",
+    "video/x-m4v": ".m4v",
+    "video/x-flv": ".flv",
+}
 
 
 def _is_http_probe_source(source: str) -> bool:
     parsed = urlparse(source)
-    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+    return parsed.scheme.lower() in {"http", "https"} and bool(parsed.netloc)
 
 
 def _validate_web_url_source(source: str) -> JSONResponse | None:
@@ -59,6 +73,70 @@ def _validate_web_url_source(source: str) -> JSONResponse | None:
             },
         )
     return None
+
+
+def _upload_limit_bytes() -> int:
+    raw = os.environ.get("VIDEO_KB_MAX_UPLOAD_MB", "")
+    if not raw:
+        return _MAX_UPLOAD_BYTES
+    try:
+        return max(1, int(raw)) * 1024 * 1024
+    except ValueError:
+        return _MAX_UPLOAD_BYTES
+
+
+def _safe_upload_suffix(file_field: UploadFile) -> str | None:
+    suffix = Path(file_field.filename or "").suffix.lower()
+    if suffix in _ALLOWED_UPLOAD_SUFFIXES:
+        return suffix
+    content_type = (file_field.content_type or "").split(";", 1)[0].strip().lower()
+    return _MIME_SUFFIXES.get(content_type)
+
+
+async def _store_upload(file_field: UploadFile) -> tuple[Path | None, JSONResponse | None]:
+    suffix = _safe_upload_suffix(file_field)
+    if suffix is None:
+        return None, JSONResponse(
+            status_code=422,
+            content={
+                "error": "validation",
+                "message": "Formato de video nao suportado para upload.",
+            },
+        )
+
+    tmp_path = Path(tempfile.gettempdir()) / f"vkb_upload_{uuid.uuid4().hex}{suffix}"
+    limit = _upload_limit_bytes()
+    total = 0
+    try:
+        with tmp_path.open("wb") as handle:
+            while True:
+                chunk = await file_field.read(_UPLOAD_CHUNK_BYTES)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > limit:
+                    handle.close()
+                    tmp_path.unlink(missing_ok=True)
+                    return None, JSONResponse(
+                        status_code=413,
+                        content={
+                            "error": "validation",
+                            "message": "Upload excede o limite permitido.",
+                        },
+                    )
+                handle.write(chunk)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+    if total == 0:
+        tmp_path.unlink(missing_ok=True)
+        return None, JSONResponse(
+            status_code=422,
+            content={"error": "validation", "message": "Arquivo de upload vazio."},
+        )
+
+    return tmp_path, None
 
 _VERSION = "0.1.0"
 
@@ -213,9 +291,14 @@ async def submit_job(
                 status_code=422,
                 content={"error": "validation", "message": "Campo 'file' obrigatorio no upload."},
             )
-        tmp_path = Path(tempfile.gettempdir()) / f"vkb_upload_{uuid.uuid4().hex}.mp4"
-        content = await file_field.read()
-        tmp_path.write_bytes(content)
+        tmp_path, upload_error = await _store_upload(file_field)
+        if upload_error is not None:
+            return upload_error
+        if tmp_path is None:
+            return JSONResponse(
+                status_code=422,
+                content={"error": "validation", "message": "Upload invalido."},
+            )
         source = str(tmp_path)
         language = form.get("language") or None
         ai_mode = str(form.get("ai_mode") or "auto")
@@ -228,7 +311,24 @@ async def submit_job(
                 status_code=422,
                 content={"error": "validation", "message": "Body JSON invalido."},
             )
-        source = body.get("source", "").strip()
+        if not isinstance(body, dict):
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "error": "validation",
+                    "message": "Corpo da requisicao deve ser um objeto JSON.",
+                },
+            )
+        raw_source = body.get("source", "")
+        if not isinstance(raw_source, str):
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "error": "validation",
+                    "message": "Campo 'source' obrigatorio e deve ser texto.",
+                },
+            )
+        source = raw_source.strip()
         if not source:
             return JSONResponse(
                 status_code=422,
@@ -245,7 +345,8 @@ async def submit_job(
         provider = body.get("provider") or "openai"
 
     # --- dedupe por source_hash para URLs ---
-    if source.startswith("http://") or source.startswith("https://"):
+    source_hash: str | None = None
+    if source.lower().startswith(("http://", "https://")):
         try:
             from ...index import RunIndex, resolve_index_path
             from ...utils import sha256_url
@@ -266,7 +367,7 @@ async def submit_job(
         except Exception:  # noqa: BLE001
             pass  # dedupe gracil: nao bloqueia o envio
 
-    job_id = f"{now_id()}-{slugify(source)}"
+    job_id = f"{now_id()}-{uuid.uuid4().hex[:8]}-{slugify(source)}"
 
     job_store.submit(
         job_id=job_id,
@@ -274,6 +375,7 @@ async def submit_job(
         provider=provider,
         ai_mode=ai_mode,
         language=language,
+        source_hash=source_hash,
     )
 
     job = job_store.get(job_id)
@@ -406,26 +508,37 @@ async def job_events(
         )
 
     async def _sse_generator():  # type: ignore[return]
+        queue = job.subscribe()
+        seen: set[tuple[str, str, str]] = set()
         # Drena historico (reconexao)
-        for event in list(job.progress_history):
-            yield {"data": event.model_dump_json()}
+        try:
+            for event in list(job.progress_history):
+                seen.add((event.step, event.ts, event.detail))
+                yield {"data": event.model_dump_json()}
 
-        if job.status in ("completed", "failed"):
-            return
+            if job.status in ("completed", "failed"):
+                return
 
-        # Escuta eventos novos
-        while True:
-            if await request.is_disconnected():
-                break
-            try:
-                event = await job._sse_queue.get()
-            except Exception:  # noqa: BLE001
-                break
-            if event is None:
-                break
-            yield {"data": event.model_dump_json()}
-            if event.step in ("done", "failed"):
-                break
+            # Escuta eventos novos sem bloquear para sempre em desconexao.
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    continue
+                except Exception:  # noqa: BLE001
+                    break
+                if event is None:
+                    break
+                marker = (event.step, event.ts, event.detail)
+                if marker not in seen:
+                    seen.add(marker)
+                    yield {"data": event.model_dump_json()}
+                if event.step in ("done", "failed"):
+                    break
+        finally:
+            job.unsubscribe(queue)
 
     return EventSourceResponse(_sse_generator())
 
@@ -713,7 +826,7 @@ def health(
 ) -> HealthResponse:
     running = [j for j in job_store.list_active() if j.status == "running"]
     active_job = running[0].job_id if running else None
-    queue_size = job_store._queue.qsize()
+    queue_size = job_store.queue_size()
 
     return HealthResponse(
         status="ok",

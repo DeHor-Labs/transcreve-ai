@@ -26,6 +26,7 @@ export function ErrorState({
       </div>
       {onRetry && (
         <button
+          type="button"
           onClick={onRetry}
           className="text-accent text-sm underline underline-offset-2 hover:opacity-80 transition-opacity"
         >

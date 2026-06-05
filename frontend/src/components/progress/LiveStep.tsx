@@ -7,7 +7,12 @@ interface LiveStepProps {
 export function LiveStep({ event }: LiveStepProps) {
   const isFailed = event.status === 'failed';
   return (
-    <div className="flex items-start gap-3">
+    <div
+      role="status"
+      aria-live={isFailed ? 'assertive' : 'polite'}
+      aria-atomic="true"
+      className="flex items-start gap-3"
+    >
       <div
         className={[
           'mt-0.5 w-2 h-2 rounded-full shrink-0',

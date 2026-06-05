@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { askKnowledge, searchKnowledge } from '../api/search';
 import type { AskResponse, SearchResponse, SearchResult } from '../api/search';
@@ -109,7 +109,7 @@ export function SearchPage() {
   const [generateAnswer, setGenerateAnswer] = useState(false);
   const [state, setState] = useState<PageState>({ tag: 'idle' });
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const q = query.trim();
     if (!q) return;
@@ -172,22 +172,39 @@ export function SearchPage() {
       </div>
 
       {/* Formulario */}
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <form
+        onSubmit={handleSubmit}
+        className="flex flex-col gap-4"
+        aria-label="Formulario de busca semantica"
+      >
+        <label htmlFor="search-query" className="sr-only">
+          Consulta
+        </label>
         <textarea
+          id="search-query"
+          name="search-query"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="O que foi dito sobre...?"
           rows={3}
+          aria-describedby="search-help"
           className={[
             'w-full rounded-xl border border-border bg-surface2',
             'px-4 py-3 text-sm text-text-primary placeholder:text-text-muted',
             'resize-none focus:outline-none focus:ring-2 focus:ring-accent/40',
           ].join(' ')}
         />
+        <p id="search-help" className="sr-only">
+          Digite o texto para buscar por trechos ou contexto no seu historico.
+        </p>
 
         <div className="flex items-center justify-between gap-4 flex-wrap">
-          <label className="flex items-center gap-2 cursor-pointer select-none">
+          <label
+            htmlFor="search-generate-answer"
+            className="flex items-center gap-2 cursor-pointer select-none"
+          >
             <input
+              id="search-generate-answer"
               type="checkbox"
               checked={generateAnswer}
               onChange={(e) => setGenerateAnswer(e.target.checked)}

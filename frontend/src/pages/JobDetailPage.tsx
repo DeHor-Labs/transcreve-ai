@@ -20,8 +20,8 @@ export function JobDetailPage() {
   const isActive = job?.status === 'running' || job?.status === 'queued';
   const isDone = job?.status === 'completed';
   const isFailed = job?.status === 'failed';
-
-  const { events, latest, done: sseD } = useJobEvents(jobId, !!job && isActive);
+  const { events, latest, done: sseDone, failed: sseFailed } = useJobEvents(jobId, !!job && isActive);
+  const hasFailed = isFailed || sseFailed;
 
   // Usa eventos SSE se disponivel, caso contrario usa progress do polling
   const currentEvent = latest ?? job?.progress ?? null;
@@ -32,7 +32,7 @@ export function JobDetailPage() {
   const timelineEvents = events.length > 0 ? events : (job?.progress_history ?? []);
 
   // Query do dossie - ativa quando done (por SSE ou por polling)
-  const shouldFetchDossier = isDone || sseD;
+  const shouldFetchDossier = !hasFailed && (isDone || sseDone);
   const dossierQuery = useQuery({
     queryKey: ['dossier', jobId],
     queryFn: () => getDossier(jobId),
@@ -87,7 +87,7 @@ export function JobDetailPage() {
         {job && (
           <>
             {/* Estado: em andamento */}
-            {(isActive || (isFailed && !dossierQuery.data)) && !isDone && !sseD && (
+            {(isActive && !hasFailed) && (
               <div className="flex flex-col lg:flex-row gap-8">
                 {/* Sidebar: timeline */}
                 <aside
@@ -97,6 +97,7 @@ export function JobDetailPage() {
                   <StepTimeline
                     events={timelineEvents}
                     currentStep={currentStep}
+                    status={job.status}
                   />
                 </aside>
 
@@ -136,18 +137,18 @@ export function JobDetailPage() {
             )}
 
             {/* Estado: falhou */}
-            {isFailed && currentEvent && !sseD && (
+            {hasFailed && (
               <div className="max-w-lg mx-auto">
                 <ErrorState
                   title="Analise falhou"
-                  message={currentEvent.detail}
+                  message={currentEvent?.detail ?? 'A analise falhou. Verifique a fonte e tente novamente.'}
                   onRetry={() => void refetch()}
                 />
               </div>
             )}
 
             {/* Estado: concluido - dossie */}
-            {(isDone || sseD) && (
+            {(isDone || sseDone) && !hasFailed && (
               <>
                 {dossierQuery.isLoading && (
                   <div className="flex justify-center py-20" aria-busy="true" aria-label="Carregando dossie">

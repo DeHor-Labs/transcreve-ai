@@ -72,7 +72,13 @@ def load_storage(name: str, **opts: object) -> StorageBackend:
             f"Nao foi possivel importar o backend '{name}' ({ref}). {hint}Erro original: {exc}"
         ) from exc
 
-    cls = getattr(module, class_name)
+    try:
+        cls = getattr(module, class_name)
+    except AttributeError as exc:
+        raise ImportError(
+            f"Backend '{name}' aponta para classe inexistente '{class_name}' em '{module_path}'."
+        ) from exc
+
     return cls(**opts)  # type: ignore[return-value]
 
 

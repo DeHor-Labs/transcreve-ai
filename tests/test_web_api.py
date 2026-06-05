@@ -171,6 +171,16 @@ class TestSubmitJob(_WebTestCase):
         )
         self.assertEqual(resp.status_code, 422)
 
+    def test_submit_json_nao_objeto_retorna_422(self) -> None:
+        resp = self.client.post("/api/jobs", json=[])
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["error"], "validation")
+
+    def test_submit_source_nao_texto_retorna_422(self) -> None:
+        resp = self.client.post("/api/jobs", json={"source": 123})
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["error"], "validation")
+
     def test_submit_com_provider_e_ai_mode(self) -> None:
         resp = self.client.post(
             "/api/jobs",
@@ -222,6 +232,50 @@ class TestSubmitJob(_WebTestCase):
         data = resp.json()
         self.assertIn("job_id", data)
         self.assertEqual(data["status"], "queued")
+
+    def test_submit_upload_preserva_extensao_original(self) -> None:
+        video_bytes = b"\x1a\x45\xdf\xa3fake-webm"
+
+        resp = self.client.post(
+            "/api/jobs",
+            files={"file": ("clip.webm", video_bytes, "video/webm")},
+            data={"ai_mode": "off", "provider": "local"},
+        )
+
+        self.assertEqual(resp.status_code, 202)
+        job_id = resp.json()["job_id"]
+        job = self._app.state.job_store.get(job_id)
+        self.assertIsNotNone(job)
+        assert job is not None
+        self.assertTrue(job.source.endswith(".webm"))
+
+    def test_submit_upload_rejeita_arquivo_maior_que_limite(self) -> None:
+        with patch("video_kb.web.routes.api._MAX_UPLOAD_BYTES", 4):
+            resp = self.client.post(
+                "/api/jobs",
+                files={"file": ("clip.mp4", b"12345", "video/mp4")},
+                data={"ai_mode": "off", "provider": "local"},
+            )
+
+        self.assertEqual(resp.status_code, 413)
+        self.assertEqual(resp.json()["error"], "validation")
+
+    def test_submit_duas_requisicoes_mesmo_segundo_nao_colidem_job_id(self) -> None:
+        with patch("video_kb.utils.now_id", return_value="20260605T010101Z"):
+            first = self.client.post(
+                "/api/jobs",
+                files={"file": ("clip-a.mp4", b"fake-a", "video/mp4")},
+                data={"ai_mode": "off", "provider": "local"},
+            )
+            second = self.client.post(
+                "/api/jobs",
+                files={"file": ("clip-b.mp4", b"fake-b", "video/mp4")},
+                data={"ai_mode": "off", "provider": "local"},
+            )
+
+        self.assertEqual(first.status_code, 202)
+        self.assertEqual(second.status_code, 202)
+        self.assertNotEqual(first.json()["job_id"], second.json()["job_id"])
 
 
 # ---------------------------------------------------------------------------
@@ -434,6 +488,71 @@ class TestSubmitJobComPipelineMockado(unittest.TestCase):
                     status, "completed", f"Status esperado 'completed', obtido '{status}'"
                 )
 
+    def test_pipeline_recebe_job_id_como_run_id(self) -> None:
+        from fastapi.testclient import TestClient
+
+        captured_run_ids: list[str] = []
+
+        def fake_run(pipeline_self, source: str) -> object:  # type: ignore[no-untyped-def]
+            del source
+            captured_run_ids.append(pipeline_self.options.run_id)
+            result = _make_fake_result(str(self._output_dir))
+            result.run_id = pipeline_self.options.run_id
+            return result
+
+        with patch("video_kb.pipeline.VideoKnowledgePipeline.run", new=fake_run):
+            app = _make_test_app(self._tmp_dir)
+            with TestClient(app) as client:
+                post = client.post("/api/jobs", json={"source": "https://example.com/run-id"})
+                self.assertEqual(post.status_code, 202)
+                job_id = post.json()["job_id"]
+
+                deadline = time.monotonic() + 3.0
+                while time.monotonic() < deadline and not captured_run_ids:
+                    time.sleep(0.05)
+
+                self.assertEqual(captured_run_ids, [job_id])
+
+    def test_pipeline_falha_persiste_status_failed_no_index(self) -> None:
+        from fastapi.testclient import TestClient
+
+        def fail_run(_pipeline_self, _source: str) -> object:  # type: ignore[no-untyped-def]
+            raise RuntimeError(
+                "falhou em https://signed.example/video.mp4?token=secret "
+                "/tmp/vkb_upload_secret.mp4"
+            )
+
+        with patch("video_kb.pipeline.VideoKnowledgePipeline.run", new=fail_run):
+            app = _make_test_app(self._tmp_dir)
+            with TestClient(app) as client:
+                post = client.post("/api/jobs", json={"source": "https://example.com/fail"})
+                self.assertEqual(post.status_code, 202)
+                job_id = post.json()["job_id"]
+
+                deadline = time.monotonic() + 3.0
+                status = "queued"
+                data: dict[str, object] = {}
+                while time.monotonic() < deadline and status in ("queued", "running"):
+                    time.sleep(0.05)
+                    resp = client.get(f"/api/jobs/{job_id}")
+                    data = resp.json()
+                    status = str(data["status"])
+
+                self.assertEqual(status, "failed")
+                progress = data.get("progress") or {}
+                self.assertIsInstance(progress, dict)
+                detail = str(progress.get("detail", ""))
+                self.assertNotIn("token=secret", detail)
+                self.assertNotIn("/tmp/vkb_upload_secret", detail)
+
+                from video_kb.index import RunIndex
+
+                with RunIndex(Path(self._tmp_dir) / "test_index.db") as idx:
+                    run = idx.get_run(job_id)
+                self.assertIsNotNone(run)
+                assert run is not None
+                self.assertEqual(run["status"], "failed")
+
     def test_pipeline_mockado_dossier_disponivel(self) -> None:
         """Apos job completed, /dossier deve retornar 200."""
         from fastapi.testclient import TestClient
@@ -455,11 +574,11 @@ class TestSubmitJobComPipelineMockado(unittest.TestCase):
                     time.sleep(0.05)
                     status = client.get(f"/api/jobs/{job_id}").json()["status"]
 
-                if status == "completed":
-                    resp = client.get(f"/api/jobs/{job_id}/dossier")
-                    self.assertEqual(resp.status_code, 200)
-                    data = resp.json()
-                    self.assertIn("markdown", data)
+                self.assertEqual(status, "completed", f"Status final inesperado: {status}")
+                resp = client.get(f"/api/jobs/{job_id}/dossier")
+                self.assertEqual(resp.status_code, 200)
+                data = resp.json()
+                self.assertIn("markdown", data)
 
 
 # ---------------------------------------------------------------------------

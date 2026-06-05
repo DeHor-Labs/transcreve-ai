@@ -82,6 +82,9 @@ def sha256_url(url: str) -> str:
     """
     Retorna o sha256 de uma URL remota normalizada.
 
+    Apenas URLs com scheme http/https sao normalizadas para deduplicacao.
+    Para entradas sem scheme, retorna hash do caminho bruto (case-sensitive).
+
     Extrai o ID canonico quando possivel (YouTube, Vimeo) e descarta
     parametros de rastreamento para garantir que URLs equivalentes
     produzam o mesmo hash.
@@ -104,19 +107,25 @@ def sha256_url(url: str) -> str:
     )
 
     parsed = urllib.parse.urlparse(url)
+    if parsed.scheme and parsed.scheme.lower() not in ("http", "https"):
+        raise ValueError(f"scheme nao suportado para hash de URL: {parsed.scheme}")
+
+    if not parsed.scheme:
+        return hashlib.sha256(url.encode("utf-8")).hexdigest()
+
     host = parsed.netloc.lower().lstrip("www.")
-    path_lower = parsed.path.rstrip("/").lower()
+    path = parsed.path.rstrip("/")
     qs = urllib.parse.parse_qs(parsed.query, keep_blank_values=False)
 
     # YouTube: youtube.com ou youtu.be
     if host in ("youtube.com", "youtu.be", "m.youtube.com"):
         if host == "youtu.be":
-            vid = path_lower.lstrip("/")
+            vid = path.lstrip("/")
         else:
             vid = (qs.get("v") or [""])[0]
             if not vid:
                 # /shorts/<id> ou /embed/<id>
-                parts = path_lower.strip("/").split("/")
+                parts = path.strip("/").split("/")
                 vid = parts[-1] if len(parts) >= 2 else ""
         if vid:
             canonical = f"youtube:{vid}"
@@ -124,7 +133,7 @@ def sha256_url(url: str) -> str:
 
     # Vimeo: vimeo.com
     if host == "vimeo.com":
-        parts = path_lower.strip("/").split("/")
+        parts = path.strip("/").split("/")
         vid = parts[0] if parts else ""
         if vid and vid.isdigit():
             canonical = f"vimeo:{vid}"
@@ -133,7 +142,7 @@ def sha256_url(url: str) -> str:
     # Fallback generico: host + path sem parametros de rastreamento
     clean_qs = {k: v for k, v in qs.items() if k not in _TRACKING_PARAMS}
     clean_query = urllib.parse.urlencode(clean_qs, doseq=True)
-    canonical = f"{host}{path_lower}"
+    canonical = f"{host}{path.lower()}"
     if clean_query:
         canonical = f"{canonical}?{clean_query}"
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

@@ -66,10 +66,11 @@ class ObsidianBackend(StorageBackend):
         **opts: Any,
     ) -> StorageRef:
         """Copia o dossie para a vault e retorna a referencia final."""
+        subdir = self._resolve_subdir(self._subdir)
         fm = self._require_frontmatter()
         vault = self._resolve_vault()
 
-        dest_dir = vault / self._subdir / result.run_id
+        dest_dir = vault / subdir / result.run_id
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         # --- markdown com frontmatter injetado ---
@@ -105,6 +106,7 @@ class ObsidianBackend(StorageBackend):
 
     def health_check(self) -> None:
         """Verifica vault acessivel e python-frontmatter instalado."""
+        self._resolve_subdir(self._subdir)
         self._require_frontmatter()
         self._resolve_vault()
 
@@ -126,6 +128,32 @@ class ObsidianBackend(StorageBackend):
                 "Verifique se o caminho esta correto e se a vault existe."
             )
         return vault
+
+    @staticmethod
+    def _resolve_subdir(subdir: str | None = None) -> str:
+        """
+        Sanitiza subdir preservando apenas caminhos relativos sem traversia.
+
+        Rejeita:
+        - caminho absoluto (ex.: /notes)
+        - segmentos com ".."
+        """
+        resolved = (subdir or "").strip()
+        if not resolved:
+            return _DEFAULT_SUBDIR
+
+        candidate = Path(resolved)
+        if candidate.is_absolute():
+            raise RuntimeError(
+                f"Subdir invalido para Obsidian: '{resolved}'. Nao use caminho absoluto."
+            )
+        if any(part == ".." for part in candidate.parts):
+            raise RuntimeError(
+                f"Subdir invalido para Obsidian: '{resolved}'. "
+                "Nao sao permitidos segmentos '..' para evitar path traversal."
+            )
+
+        return str(candidate)
 
     @staticmethod
     def _require_frontmatter() -> Any:

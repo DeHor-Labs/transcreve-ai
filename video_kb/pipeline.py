@@ -49,6 +49,7 @@ class PipelineOptions:
     cookies: str | None = None
     video_format: str = "bv*+ba/b"
     provider_name: str = ""
+    run_id: str = ""
     # --- novas flags de persistencia ---
     force: bool = False
     storage_backend: str = "filesystem"
@@ -64,7 +65,7 @@ class VideoKnowledgePipeline:
         self.options = options
 
     def run(self, source: str) -> AnalysisResult:
-        run_id = f"{now_id()}-{slugify(source)}"
+        run_id = self.options.run_id or f"{now_id()}-{slugify(source)}"
         run_dir = ensure_dir(self.options.out_dir / run_id).resolve()
 
         def _emit(step: str, detail: str) -> None:
@@ -84,7 +85,7 @@ class VideoKnowledgePipeline:
             _index_ok = False
             _index_ctx = None  # type: ignore[assignment]
 
-        source_is_url = source.startswith("http://") or source.startswith("https://")
+        source_is_url = source.lower().startswith(("http://", "https://"))
 
         # Calcula hash para URLs antes do download (early-exit de dedupe)
         source_hash: str | None = None
@@ -232,7 +233,12 @@ class VideoKnowledgePipeline:
         if use_ai and audio_path:
             _emit("ai", f"Transcrevendo e descrevendo com IA ({provider_name})...")
             try:
-                provider = load_provider(provider_name)
+                provider = load_provider(
+                    provider_name,
+                    vision_model=self.options.vision_model,
+                    transcribe_model=self.options.transcribe_model,
+                    language=self.options.language,
+                )
 
                 # --- transcricao ---
                 transcribe_result = provider.transcribe(

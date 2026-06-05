@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import warnings
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -239,6 +240,27 @@ class NotionBackendSave(unittest.TestCase):
                     )
             self.assertIn("Notion", str(ctx.exception))
 
+    def test_save_emite_aviso_sobre_falta_de_dedupe(self) -> None:
+        from video_kb.storage.notion import NotionBackend
+
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            fake_nc = self._make_fake_notion_client()
+
+            with warnings.catch_warnings(record=True) as captured:
+                warnings.simplefilter("always")
+                with patch("video_kb.storage.notion._require_notion_client", return_value=fake_nc):
+                    backend = NotionBackend(api_key="key", database_id="db")
+                    backend.save(
+                        _make_result(),  # type: ignore[arg-type]
+                        _make_artifacts(tmp),  # type: ignore[arg-type]
+                    )
+
+            self.assertTrue(
+                any("nao possui dedupe" in str(aviso.message).lower() for aviso in captured),
+                "Espera-se aviso explicito sobre ausencia de idempotencia no NotionBackend.",
+            )
+
 
 # ===========================================================================
 # Supabase
@@ -271,6 +293,26 @@ class SupabaseBackendSave(unittest.TestCase):
         with patch.dict("os.environ", env, clear=True):
             backend = SupabaseBackend()
         self.assertIsNotNone(backend)
+
+    def test_health_check_levanta_runtime_error_sem_credenciais(self) -> None:
+        import os
+
+        from video_kb.storage.supabase import SupabaseBackend
+
+        env = {k: v for k, v in os.environ.items() if k not in ("SUPABASE_URL", "SUPABASE_KEY")}
+        with patch.dict("os.environ", env, clear=True):
+            backend = SupabaseBackend()
+            with self.assertRaises(RuntimeError) as ctx:
+                backend.health_check()
+        msg = str(ctx.exception)
+        self.assertIn("SUPABASE_URL", msg)
+        self.assertIn("SUPABASE_KEY", msg)
+
+    def test_health_check_passa_com_credenciais(self) -> None:
+        from video_kb.storage.supabase import SupabaseBackend
+
+        backend = SupabaseBackend(url="https://fake.supabase.co", key="fake-key")
+        backend.health_check()
 
 
 # ===========================================================================

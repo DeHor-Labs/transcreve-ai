@@ -12,6 +12,7 @@ API publica:
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -156,8 +157,10 @@ class EvalRunner:
         options_cls: Any,
     ) -> CaseResult:
         """Roda o pipeline para um caso/provider e coleta todas as metricas."""
+        safe_case_id = _sanitize_case_id(case.id)
+
         # Diretorio de saida isolado por caso+provider
-        run_out = self.out_dir / "runs" / case.id / provider_name
+        run_out = self.out_dir / "runs" / safe_case_id / provider_name
         run_out.mkdir(parents=True, exist_ok=True)
 
         timer = StageTimer()
@@ -178,7 +181,7 @@ class EvalRunner:
         try:
             analysis_result = pipeline.run(case.source)
         except Exception as exc:  # noqa: BLE001
-            error_message = str(exc)
+            error_message = _sanitize_error_message(str(exc))
         finally:
             wall_elapsed = time.perf_counter() - wall_start
             timer.close()
@@ -219,21 +222,29 @@ class EvalRunner:
         if self.judge_provider:
             from .judge import run_judge
 
-            judge_result = run_judge(
-                synthesis=analysis_result.synthesis,  # type: ignore[union-attr]
-                provider_name=self.judge_provider,
-            )
-            judge_data = {
-                "cobertura": judge_result.cobertura,
-                "coerencia": judge_result.coerencia,
-                "utilidade": judge_result.utilidade,
-                "nota_geral": judge_result.nota_geral,
-                "justificativa": judge_result.justificativa,
-            }
-            if judge_result.error:
-                judge_data["judge_error"] = judge_result.error
-            if judge_result.skipped:
-                judge_data["judge_skipped"] = judge_result.skipped
+            try:
+                judge_result = run_judge(
+                    synthesis=analysis_result.synthesis,  # type: ignore[union-attr]
+                    provider_name=self.judge_provider,
+                )
+            except Exception as exc:  # noqa: BLE001
+                judge_data = {
+                    "judge_error": _sanitize_error_message(
+                        f"falha ao executar judge '{self.judge_provider}': {exc}"
+                    )
+                }
+            else:
+                judge_data = {
+                    "cobertura": judge_result.cobertura,
+                    "coerencia": judge_result.coerencia,
+                    "utilidade": judge_result.utilidade,
+                    "nota_geral": judge_result.nota_geral,
+                    "justificativa": judge_result.justificativa,
+                }
+                if judge_result.error:
+                    judge_data["judge_error"] = judge_result.error
+                if judge_result.skipped:
+                    judge_data["judge_skipped"] = judge_result.skipped
 
         self._log(f"    OK: total={wall_elapsed:.1f}s cost={cost['total_usd']:.4f} USD")
 
@@ -318,3 +329,23 @@ def _iso_now() -> str:
     from datetime import datetime, timezone
 
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _sanitize_case_id(value: str) -> str:
+    """Sanitiza case.id para nome de pasta seguro no sistema de arquivos."""
+    value = (value or "").strip()
+    if not value:
+        return "case"
+
+    sanitized = re.sub(r"[^A-Za-z0-9._-]", "-", value)
+    sanitized = sanitized.strip("-_.") or "case"
+    if len(sanitized) > 80:
+        sanitized = sanitized[:80]
+    return sanitized
+
+
+def _sanitize_error_message(message: str) -> str:
+    """Limpa mensagem de erro para serializacao JSON e logs humanos."""
+    text = re.sub(r"[\x00-\x1f\x7f-\x9f]+", " ", message or "")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:1000]

@@ -28,12 +28,32 @@ class SupabaseBackend(StorageBackend):
         self._key = opts.get("key") or os.environ.get("SUPABASE_KEY") or ""
         self._bucket = opts.get("bucket") or os.environ.get("SUPABASE_BUCKET") or "transcreve-ai"
 
+    def health_check(self) -> None:
+        """Valida credenciais obrigatorias do Supabase."""
+        self._require_credentials()
+
+    def _require_credentials(self) -> None:
+        erros: list[str] = []
+        if not self._url:
+            erros.append(
+                "SUPABASE_URL nao definida. Configure a URL do projeto em SUPABASE_URL "
+                "ou passe url=<endpoint> ao instanciar SupabaseBackend."
+            )
+        if not self._key:
+            erros.append(
+                "SUPABASE_KEY nao definida. Configure a chave anon/service em SUPABASE_KEY "
+                "ou passe key=<chave> ao instanciar SupabaseBackend."
+            )
+        if erros:
+            raise RuntimeError("\n".join(erros))
+
     def save(
         self,
         result: AnalysisResult,
         artifacts: ArtifactPaths,
         **opts: Any,
     ) -> StorageRef:
+        self._require_credentials()
         raise NotImplementedError(
             "backend supabase ainda nao implementado; "
             "use filesystem/obsidian/notion/s3 por enquanto."

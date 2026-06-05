@@ -10,8 +10,11 @@ Cobre:
 
 from __future__ import annotations
 
+import importlib
 import sys
 import unittest
+import warnings
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from video_kb.providers.registry import (
@@ -58,6 +61,35 @@ class RegistryGetProvider(unittest.TestCase):
         self.assertIn("vision", caps)
         self.assertIn("synthesize", caps)
         self.assertIn("embed", caps)
+
+    def test_openai_recebe_overrides_de_modelo(self) -> None:
+        provider = load_provider(
+            "openai",
+            vision_model="gpt-vision-custom",
+            transcribe_model="whisper-custom",
+            language="pt",
+        )
+
+        self.assertEqual(provider.vision_model, "gpt-vision-custom")
+        self.assertEqual(provider.transcribe_model, "whisper-custom")
+        self.assertEqual(provider.language, "pt")
+
+    def test_local_recebe_override_de_whisper(self) -> None:
+        provider = load_provider("local", transcribe_model="small")
+
+        self.assertEqual(provider.whisper_model, "small")
+
+    def test_classe_registrada_inexistente_levanta_importerror_claro(self) -> None:
+        with patch.dict(
+            _REGISTRY,
+            {"quebrado": "video_kb.providers.local_provider:ProviderQueNaoExiste"},
+        ):
+            with self.assertRaises(ImportError) as ctx:
+                load_provider("quebrado")
+
+        mensagem = str(ctx.exception)
+        self.assertIn("ProviderQueNaoExiste", mensagem)
+        self.assertIn("video_kb.providers.local_provider", mensagem)
 
 
 class RegistryNomeInvalido(unittest.TestCase):
@@ -146,6 +178,46 @@ class RegistryResolveProviderName(unittest.TestCase):
         with patch.dict("os.environ", env_sem_provider, clear=True):
             # string vazia e falsy, deve cair no default
             self.assertEqual(resolve_provider_name(""), "openai")
+
+
+class RegistryEntryPointWarnings(unittest.TestCase):
+    """A inicializacao do package de providers deve avisar falhas de entry points."""
+
+    def test_falha_no_entry_points_gera_warning(self) -> None:
+        import video_kb.providers as providers_pkg
+
+        with patch(
+            "video_kb.providers.importlib.metadata.entry_points",
+            side_effect=RuntimeError("entry_points indisponivel"),
+        ):
+            with warnings.catch_warnings(record=True) as captured:
+                warnings.simplefilter("always")
+                importlib.reload(providers_pkg)
+
+        self.assertTrue(
+            any(
+                "nao foi possivel carregar entry points" in str(item.message).lower()
+                for item in captured
+            ),
+            "Esperado warning explícito quando entry_points falha.",
+        )
+
+    def test_entry_point_invalido_gera_warning(self) -> None:
+        fake_entry = SimpleNamespace(name="xpto", value="provider")
+
+        import video_kb.providers as providers_pkg
+
+        with patch(
+            "video_kb.providers.importlib.metadata.entry_points",
+            return_value=[fake_entry],
+        ):
+            with warnings.catch_warnings(record=True) as captured:
+                warnings.simplefilter("always")
+                importlib.reload(providers_pkg)
+
+        mensagem = " ".join(str(item.message) for item in captured)
+        self.assertIn("falha", mensagem.lower())
+        self.assertIn("referencia de classe", mensagem)
 
 
 if __name__ == "__main__":

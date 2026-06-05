@@ -56,7 +56,7 @@ class OpenAIProvider(AIProvider):
         chunks_dir: Path,
         language: str | None,
     ) -> TranscribeResult:
-        from ..media import split_audio  # lazy - evita import circular no topo
+        from ..media import probe_duration, split_audio  # lazy - evita import circular no topo
 
         lang = language or self.language
         if audio_path.stat().st_size > AUDIO_CHUNK_LIMIT_BYTES:
@@ -72,7 +72,7 @@ class OpenAIProvider(AIProvider):
             texts.append(chunk_text)
             segments.extend(chunk_segments)
             if len(chunks) > 1:
-                offset += 600.0
+                offset += _safe_chunk_duration(chunk, fallback=600.0, probe=probe_duration)
 
         text = "\n".join(part for part in texts if part).strip()
         return TranscribeResult(text=text, segments=segments)
@@ -84,21 +84,19 @@ class OpenAIProvider(AIProvider):
         language: str | None,
     ) -> tuple[str, list[TranscriptSegment]]:
         client = self._get_client()
-        kwargs: dict[str, Any] = {
-            "model": self.transcribe_model,
-            "file": audio_path.open("rb"),
-            "response_format": "verbose_json",
-        }
+        kwargs: dict[str, Any] = {"model": self.transcribe_model, "response_format": "verbose_json"}
         if language:
             kwargs["language"] = language
         try:
-            kwargs["timestamp_granularities"] = ["segment"]
-            response = client.audio.transcriptions.create(**kwargs)
+            with audio_path.open("rb") as handle:
+                response = client.audio.transcriptions.create(
+                    **kwargs,
+                    file=handle,
+                    timestamp_granularities=["segment"],
+                )
         except TypeError:
-            kwargs.pop("timestamp_granularities", None)
-            response = client.audio.transcriptions.create(**kwargs)
-        finally:
-            kwargs["file"].close()
+            with audio_path.open("rb") as handle:
+                response = client.audio.transcriptions.create(**kwargs, file=handle)
 
         payload = _model_to_dict(response)
         text = payload.get("text") or getattr(response, "text", "") or ""
@@ -235,3 +233,11 @@ def _model_to_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
     return json.loads(value.json()) if hasattr(value, "json") else {}
+
+
+def _safe_chunk_duration(chunk: Path, *, fallback: float, probe: Any) -> float:
+    try:
+        duration = float(probe(chunk))
+    except Exception:  # noqa: BLE001
+        return fallback
+    return duration if duration > 0 else fallback

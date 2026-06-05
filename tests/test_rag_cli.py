@@ -306,5 +306,56 @@ class TestCliAsk(unittest.TestCase):
         self.assertIn("pergunta", out.lower())
 
 
+class TestCliRuns(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.mkdtemp()
+        self._db = str(Path(self._tmp) / "test.db")
+
+    def _register_run(self, run_id: str, output_dir: str) -> None:
+        from video_kb.index import RunIndex
+
+        with RunIndex(Path(self._db)) as idx:
+            idx.register(
+                run_id=run_id,
+                source="https://example.com/video",
+                source_hash="abc",
+                output_dir=output_dir,
+            )
+
+    def test_runs_rm_purge_fora_do_escopo_nao_deleta_arquivos(self) -> None:
+        from video_kb.index import RunIndex
+
+        escaped_dir = Path("/tmp/transcreveai-runs-rm-safeguard")
+        escaped_dir.mkdir(parents=True, exist_ok=True)
+        marker = escaped_dir / "marker.txt"
+        marker.write_text("mantido", encoding="utf-8")
+
+        self._register_run("run-safe", str(escaped_dir))
+
+        out, err, code = _run_cmd(
+            ["--index-db", self._db, "runs", "rm", "run-safe", "--purge", "--force"]
+        )
+
+        self.assertEqual(code, 0)
+        self.assertIn("fora do escopo", (err + out).lower())
+        self.assertTrue(escaped_dir.exists())
+        self.assertTrue(marker.exists())
+
+        with RunIndex(Path(self._db)) as idx:
+            self.assertIsNone(idx.get_run("run-safe"))
+
+    def test_runs_rm_purge_nao_aceita_cwd_como_output_dir(self) -> None:
+        self._register_run("run-cwd", ".")
+
+        with patch("shutil.rmtree") as rmtree:
+            out, err, code = _run_cmd(
+                ["--index-db", self._db, "runs", "rm", "run-cwd", "--purge", "--force"]
+            )
+
+        self.assertEqual(code, 0)
+        self.assertIn("fora do escopo", (err + out).lower())
+        rmtree.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

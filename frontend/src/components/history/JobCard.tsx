@@ -20,9 +20,11 @@ function formatDate(iso: string): string {
 }
 
 function formatDuration(secs: number | null): string {
-  if (!secs) return '';
-  const m = Math.floor(secs / 60);
-  const s = Math.round(secs % 60);
+  if (secs === null) return '';
+  const safeSecs = Math.max(0, Math.round(secs));
+  if (safeSecs === 0) return '0s';
+  const m = Math.floor(safeSecs / 60);
+  const s = safeSecs % 60;
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
@@ -99,9 +101,9 @@ export function JobCard({ job }: JobCardProps) {
           </div>
         )}
 
-        <div className="flex items-center gap-3 mt-2">
+        <div className="flex items-center gap-3 mt-2 flex-wrap">
           <span className="text-text-muted text-xs">{formatDate(job.created_at)}</span>
-          {job.duration_seconds && (
+          {job.duration_seconds != null && (
             <span className="text-text-muted text-xs">
               {formatDuration(job.duration_seconds)}
             </span>

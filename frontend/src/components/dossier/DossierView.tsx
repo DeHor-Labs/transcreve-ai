@@ -25,6 +25,7 @@ function MetaItem({ label, value }: { label: string; value: string | number }) {
 function formatDuration(secs: number): string {
   const h = Math.floor(secs / 3600);
   const m = Math.floor((secs % 3600) / 60);
+  if (h === 0 && m === 0) return '0min';
   if (h > 0) return `${h}h ${m}m`;
   return `${m}min`;
 }
@@ -37,7 +38,10 @@ export function DossierView({ dossier }: DossierViewProps) {
   return (
     <div className="animate-[fadeIn_0.3s_ease-out_both]" style={{ animation: 'fadeIn 0.3s ease-out both' }}>
       {/* Layout: sidebar + main */}
-      <div className="flex flex-col lg:flex-row gap-0 lg:gap-8">
+      <main
+        className="flex flex-col lg:flex-row gap-0 lg:gap-8"
+        aria-label="Conteudo do dossie"
+      >
         {/* Sidebar de metadata */}
         <aside
           aria-label="Metadados do video"
@@ -47,7 +51,7 @@ export function DossierView({ dossier }: DossierViewProps) {
 
           <Separator />
 
-          {metadata?.duration && (
+          {metadata?.duration != null && (
             <MetaItem label="Duracao" value={formatDuration(metadata.duration)} />
           )}
           {metadata?.channel && metadata.channel !== metadata?.uploader && (
@@ -81,7 +85,7 @@ export function DossierView({ dossier }: DossierViewProps) {
         </aside>
 
         {/* Conteudo principal */}
-        <main className="flex-1 min-w-0 flex flex-col gap-8">
+        <section className="flex-1 min-w-0 flex flex-col gap-8">
           {/* Resumo */}
           {synthesis?.summary && (
             <section aria-labelledby="summary-heading">
@@ -99,6 +103,9 @@ export function DossierView({ dossier }: DossierViewProps) {
           {synthesis?.chapters?.length > 0 && (
             <section aria-labelledby="chapters-heading">
               <Separator label="Capitulos" className="mb-4" />
+              <h3 id="chapters-heading" className="sr-only">
+                Capitulos
+              </h3>
               <ChapterList chapters={synthesis.chapters} />
             </section>
           )}
@@ -107,6 +114,9 @@ export function DossierView({ dossier }: DossierViewProps) {
           {(synthesis?.entities?.length > 0 || synthesis?.tools_or_products?.length > 0) && (
             <section aria-labelledby="entities-heading">
               <Separator label="Entidades e ferramentas" className="mb-4" />
+              <h3 id="entities-heading" className="sr-only">
+                Entidades e ferramentas
+              </h3>
               <div className="flex flex-col gap-5">
                 {synthesis?.entities?.length > 0 && (
                   <EntityCloud
@@ -131,6 +141,9 @@ export function DossierView({ dossier }: DossierViewProps) {
             synthesis?.questions?.length > 0) && (
             <section aria-labelledby="claims-heading">
               <Separator label="Insights" className="mb-4" />
+              <h3 id="claims-heading" className="sr-only">
+                Insights
+              </h3>
               <ClaimsList
                 claims={synthesis.claims ?? []}
                 actionItems={synthesis.action_items ?? []}
@@ -145,6 +158,7 @@ export function DossierView({ dossier }: DossierViewProps) {
             <button
               type="button"
               onClick={() => setShowMarkdown((v) => !v)}
+              aria-controls="raw-markdown"
               className="font-heading font-bold text-xs uppercase tracking-widest text-text-muted hover:text-accent transition-colors flex items-center gap-2"
               aria-expanded={showMarkdown}
             >
@@ -157,14 +171,17 @@ export function DossierView({ dossier }: DossierViewProps) {
               </svg>
               {showMarkdown ? 'Ocultar markdown' : 'Ver markdown bruto'}
             </button>
-            {showMarkdown && (
-              <div className="mt-4 p-4 rounded-md bg-surface1 border border-border overflow-auto max-h-[600px]">
+              {showMarkdown && (
+              <div
+                id="raw-markdown"
+                className="mt-4 p-4 rounded-md bg-surface1 border border-border overflow-auto max-h-[600px]"
+              >
                 <MarkdownRenderer content={markdown} />
               </div>
             )}
           </div>
-        </main>
-      </div>
+        </section>
+      </main>
     </div>
   );
 }

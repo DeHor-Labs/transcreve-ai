@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 import os
+from typing import Any
 
 from .base import AIProvider
 
@@ -32,7 +34,13 @@ def register(name: str, module_path: str) -> None:
     _REGISTRY[name] = module_path
 
 
-def load_provider(name: str) -> AIProvider:
+def load_provider(
+    name: str,
+    *,
+    vision_model: str = "",
+    transcribe_model: str = "",
+    language: str | None = None,
+) -> AIProvider:
     """
     Importa e instancia o provider pelo nome (lazy import).
 
@@ -54,8 +62,20 @@ def load_provider(name: str) -> AIProvider:
             f"Nao foi possivel importar o provider '{name}' ({ref}). {hint}Erro original: {exc}"
         ) from exc
 
-    cls = getattr(module, class_name)
-    return cls()
+    try:
+        cls = getattr(module, class_name)
+    except AttributeError as exc:
+        raise ImportError(
+            f"Provider '{name}' aponta para classe inexistente '{class_name}' em '{module_path}'."
+        ) from exc
+
+    opts = _constructor_options(
+        name,
+        vision_model=vision_model,
+        transcribe_model=transcribe_model,
+        language=language,
+    )
+    return cls(**_filter_constructor_options(cls, opts))
 
 
 def resolve_provider_name(cli_provider: str | None = None) -> str:
@@ -75,3 +95,39 @@ def _extra_hint(name: str) -> str:
         "anthropic": "Instale com: pip install transcreve-ai[anthropic]  ",
     }
     return hints.get(name, "")
+
+
+def _constructor_options(
+    name: str,
+    *,
+    vision_model: str,
+    transcribe_model: str,
+    language: str | None,
+) -> dict[str, Any]:
+    opts: dict[str, Any] = {}
+    _add_option(opts, "language", language)
+
+    if name == "local":
+        _add_option(opts, "whisper_model", transcribe_model)
+    elif name in {"gemini", "anthropic"}:
+        _add_option(opts, "model", vision_model or transcribe_model)
+    else:
+        _add_option(opts, "vision_model", vision_model)
+        _add_option(opts, "transcribe_model", transcribe_model)
+
+    return opts
+
+
+def _add_option(opts: dict[str, Any], key: str, value: Any) -> None:
+    if value:
+        opts[key] = value
+
+
+def _filter_constructor_options(cls: type[Any], opts: dict[str, Any]) -> dict[str, Any]:
+    if not opts:
+        return {}
+    signature = inspect.signature(cls)
+    params = signature.parameters
+    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values()):
+        return opts
+    return {key: value for key, value in opts.items() if key in params}

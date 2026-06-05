@@ -15,7 +15,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -247,6 +247,54 @@ class ObsidianBackendErrosConfiguracao(unittest.TestCase):
                         _make_result(),  # type: ignore[arg-type]
                         _make_artifacts(run_dir),  # type: ignore[arg-type]
                     )
+
+    def test_subdir_com_path_absolute_levanta_runtime_error(self) -> None:
+        from video_kb.storage.obsidian import ObsidianBackend
+
+        with tempfile.TemporaryDirectory() as d:
+            run_dir = Path(d) / "run"
+            run_dir.mkdir()
+            vault = Path(d) / "vault"
+            vault.mkdir()
+
+            fake_frontmatter = MagicMock()
+            fake_frontmatter.loads.return_value = MagicMock(metadata={})
+            fake_frontmatter.dumps.return_value = "# markdown\n"
+
+            with patch.object(
+                ObsidianBackend, "_require_frontmatter", return_value=fake_frontmatter
+            ):
+                backend = ObsidianBackend(vault_path=str(vault), subdir="/nao-permitido")
+                with self.assertRaises(RuntimeError) as ctx:
+                    backend.save(
+                        _make_result(),  # type: ignore[arg-type]
+                        _make_artifacts(run_dir),  # type: ignore[arg-type]
+                    )
+            self.assertIn("Subdir invalido", str(ctx.exception))
+
+    def test_subdir_com_traversal_levanta_runtime_error(self) -> None:
+        from video_kb.storage.obsidian import ObsidianBackend
+
+        with tempfile.TemporaryDirectory() as d:
+            run_dir = Path(d) / "run"
+            run_dir.mkdir()
+            vault = Path(d) / "vault"
+            vault.mkdir()
+
+            fake_frontmatter = MagicMock()
+            fake_frontmatter.loads.return_value = MagicMock(metadata={})
+            fake_frontmatter.dumps.return_value = "# markdown\n"
+
+            with patch.object(
+                ObsidianBackend, "_require_frontmatter", return_value=fake_frontmatter
+            ):
+                backend = ObsidianBackend(vault_path=str(vault), subdir="../../hack")
+                with self.assertRaises(RuntimeError) as ctx:
+                    backend.save(
+                        _make_result(),  # type: ignore[arg-type]
+                        _make_artifacts(run_dir),  # type: ignore[arg-type]
+                    )
+            self.assertIn("Subdir invalido", str(ctx.exception))
 
 
 if __name__ == "__main__":

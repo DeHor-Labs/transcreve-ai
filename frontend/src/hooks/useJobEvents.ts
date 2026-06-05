@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ProgressEvent } from '../api/types';
 
 const STEP_ORDER = ['download', 'audio', 'frames', 'ocr', 'ai', 'persist', 'done'];
@@ -25,60 +25,84 @@ export function useJobEvents(
   const [done, setDone] = useState(false);
   const [failed, setFailed] = useState(false);
   const esRef = useRef<EventSource | null>(null);
-  const reconnectRef = useRef<() => void>(() => undefined);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const doneRef = useRef(false);
+  const failedRef = useRef(false);
 
-  const connect = useCallback(() => {
+  function clearReconnectTimeout() {
+    if (reconnectTimeoutRef.current !== null) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+  }
+
+  function closeCurrentStream() {
     if (esRef.current) {
       esRef.current.close();
+      esRef.current = null;
     }
-    const es = new EventSource(`/api/jobs/${jobId}/events`);
-    esRef.current = es;
+  }
 
-    es.onmessage = (e) => {
-      try {
-        const event: ProgressEvent = JSON.parse(e.data as string);
-        setEvents((prev) => {
-          // Evita duplicatas pelo ts
-          if (prev.some((p) => p.ts === event.ts && p.step === event.step)) {
-            return prev;
+  useEffect(() => {
+    if (!enabled || !jobId) return;
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEvents([]);
+    setDone(false);
+    setFailed(false);
+    doneRef.current = false;
+    failedRef.current = false;
+
+    function connect() {
+      closeCurrentStream();
+
+      const es = new EventSource(`/api/jobs/${jobId}/events`);
+      esRef.current = es;
+
+      es.onmessage = (evt) => {
+        try {
+          const event: ProgressEvent = JSON.parse(evt.data as string);
+          setEvents((prev) => {
+            if (prev.some((p) => p.ts === event.ts && p.step === event.step)) {
+              return prev;
+            }
+            return [...prev, event];
+          });
+
+          if (event.step === 'done') {
+            doneRef.current = true;
+            setDone(true);
+            clearReconnectTimeout();
+            es.close();
+          } else if (event.status === 'failed' || event.step === 'failed') {
+            failedRef.current = true;
+            setFailed(true);
+            clearReconnectTimeout();
+            es.close();
           }
-          return [...prev, event];
-        });
-        if (event.step === 'done') {
-          setDone(true);
-          es.close();
-        } else if (event.step === 'failed') {
-          setFailed(true);
-          es.close();
+        } catch {
+          // ignora parse errors
         }
-      } catch {
-        // ignora parse errors
-      }
-    };
+      };
 
-    es.onerror = () => {
-      // Reconecta apos 2s se nao terminou
-      if (!done && !failed) {
-        setTimeout(() => {
+      es.onerror = () => {
+        if (doneRef.current || failedRef.current) return;
+        clearReconnectTimeout();
+        reconnectTimeoutRef.current = setTimeout(() => {
           if (esRef.current?.readyState === EventSource.CLOSED) {
-            reconnectRef.current();
+            connect();
           }
         }, 2000);
-      }
-    };
-  }, [jobId, done, failed]);
+      };
+    }
 
-  useEffect(() => {
-    reconnectRef.current = connect;
-  }, [connect]);
-
-  useEffect(() => {
-    if (!enabled) return;
     connect();
+
     return () => {
-      esRef.current?.close();
+      clearReconnectTimeout();
+      closeCurrentStream();
     };
-  }, [jobId, enabled, connect]);
+  }, [jobId, enabled]);
 
   const latest = events.length > 0 ? events[events.length - 1] : null;
 

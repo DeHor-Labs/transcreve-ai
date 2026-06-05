@@ -258,6 +258,122 @@ class TestEvalRunnerMocked(unittest.TestCase):
 
             self.assertIsNone(cr.wer)
 
+    def test_case_id_eh_sanitizado_para_caminho_do_run(self) -> None:
+        import tempfile
+
+        class _DummyOptions:
+            def __init__(self, **kwargs: Any) -> None:
+                captured["out_dir"] = kwargs["out_dir"]
+                self.out_dir = kwargs["out_dir"]
+                self.ai_mode = kwargs["ai_mode"]
+                self.provider_name = kwargs["provider_name"]
+                self.force = kwargs["force"]
+                self.on_progress = kwargs.get("on_progress")
+
+        class _DummyPipeline:
+            def __init__(self, options: Any) -> None:
+                self.options = options
+
+            def run(self, source: str) -> Any:
+                return _make_analysis_result()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            case_id = "../../../case with space:unsafe"
+            runner = self._make_runner(tmp_path)
+            runner.dataset.cases[0].id = case_id
+            captured: dict[str, Any] = {}
+
+            from video_kb.eval.runner import _sanitize_case_id
+
+            case = runner.dataset.cases[0]
+
+            self.assertNotEqual(_sanitize_case_id(case.id), case.id)
+
+            cr = runner._run_one(
+                case=case,
+                provider_name="local",
+                pipeline_cls=_DummyPipeline,
+                options_cls=_DummyOptions,
+            )
+
+        self.assertEqual(cr.status, "ok")
+        safe_case_id = _sanitize_case_id(case_id)
+        captured_out = captured["out_dir"]
+        self.assertIsInstance(captured_out, Path)
+        self.assertEqual(captured_out.name, "local")
+        self.assertEqual(captured_out.parent, tmp_path / "runs" / safe_case_id)
+
+    def test_judge_exception_nao_falha_o_caso(self) -> None:
+        import tempfile
+
+        from video_kb.eval.runner import EvalCase, EvalDataset, EvalRunner
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            case = EvalCase(
+                id="judge-fail",
+                source="https://example.com/video",
+                notes="",
+                ground_truth_transcript=None,
+            )
+            dataset = EvalDataset(version="1", description="x", cases=[case])
+            runner = EvalRunner(
+                dataset=dataset,
+                providers=["local"],
+                out_dir=tmp_path,
+                judge_provider="mock",
+            )
+
+            mock_result = _make_analysis_result()
+
+            from video_kb.pipeline import PipelineOptions, VideoKnowledgePipeline
+
+            with (
+                patch.object(VideoKnowledgePipeline, "run", return_value=mock_result),
+                patch.object(PipelineOptions, "__init__", return_value=None),
+                patch("video_kb.eval.judge.run_judge", side_effect=RuntimeError("llm caiu")),
+            ):
+                cr = runner._run_one(
+                    case=case,
+                    provider_name="local",
+                    pipeline_cls=VideoKnowledgePipeline,
+                    options_cls=PipelineOptions,
+                )
+
+            self.assertEqual(cr.status, "ok")
+            self.assertIsNotNone(cr.judge)
+            self.assertIn("llm caiu", cr.judge["judge_error"])
+
+    def test_run_one_error_message_eh_sanitizado(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            runner = self._make_runner(tmp_path)
+            case = runner.dataset.cases[0]
+
+            from video_kb.pipeline import PipelineOptions, VideoKnowledgePipeline
+
+            erro = RuntimeError("linha 1\nlinha 2")
+            with (
+                patch.object(
+                    VideoKnowledgePipeline,
+                    "run",
+                    side_effect=erro,
+                ),
+                patch.object(PipelineOptions, "__init__", return_value=None),
+            ):
+                cr = runner._run_one(
+                    case=case,
+                    provider_name="local",
+                    pipeline_cls=VideoKnowledgePipeline,
+                    options_cls=PipelineOptions,
+                )
+
+        self.assertEqual(cr.status, "error")
+        self.assertEqual(cr.error_message, "linha 1 linha 2")
+
 
 class TestLoadDataset(unittest.TestCase):
     def test_load_default_dataset(self) -> None:

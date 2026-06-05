@@ -13,6 +13,7 @@ API publica:
 from __future__ import annotations
 
 import importlib.metadata
+import warnings
 
 from .base import (
     AUDIO_CHUNK_LIMIT_BYTES,
@@ -28,9 +29,25 @@ from .registry import load_provider, register, resolve_provider_name
 # (ex: [project.entry-points."transcreve_ai.providers"] no pyproject.toml de terceiros)
 try:
     for _ep in importlib.metadata.entry_points(group="transcreve_ai.providers"):
-        register(_ep.name, _ep.value)
-except Exception:  # noqa: BLE001
-    pass  # entry_points ausentes nao devem impedir o import do pacote
+        try:
+            if not _ep.name or not _ep.value:
+                raise ValueError(
+                    "Entrada de entry point sem nome ou valor."
+                )
+            if ":" not in str(_ep.value):
+                raise ValueError(
+                    f"entry_point '{_ep.name}' sem referencia de classe (esperado 'modulo:Classe')."
+                )
+            register(_ep.name, _ep.value)
+        except Exception as exc:  # noqa: BLE001
+            warnings.warn(
+                f"Falha ao registrar provider externo via entry point '{_ep.name}': {exc}"
+            )
+except Exception as exc:  # noqa: BLE001
+    warnings.warn(
+        "Nao foi possivel carregar entry points do grupo transcreve_ai.providers. "
+        f"Isso nao impede o uso dos providers internos. Erro: {exc}"
+    )
 
 __all__ = [
     "AUDIO_CHUNK_LIMIT_BYTES",

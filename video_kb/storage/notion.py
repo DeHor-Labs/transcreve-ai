@@ -12,6 +12,7 @@ Configuracao via env:
 from __future__ import annotations
 
 import os
+import warnings
 from typing import Any
 
 from ..models import AnalysisResult
@@ -169,6 +170,14 @@ class NotionBackend(StorageBackend):
             opts.get("database_id") or os.environ.get("NOTION_DATABASE_ID") or ""
         )
 
+    @staticmethod
+    def _warn_no_idempotency() -> None:
+        """Alerta explicito: este backend nao tem dedupe/idempotencia integrada."""
+        warnings.warn(
+            "NotionBackend nao possui dedupe/idempotencia por run_id implementada. "
+            "Cada chamada a save() cria uma nova pagina no banco e pode gerar duplicatas."
+        )
+
     def _validate_credentials(self) -> None:
         erros: list[str] = []
         if not self._api_key:
@@ -212,6 +221,8 @@ class NotionBackend(StorageBackend):
         Levanta ImportError se notion-client nao estiver instalado.
         Levanta RuntimeError se credenciais estiverem ausentes ou invalidas.
         """
+        self._warn_no_idempotency()
+
         nc = _require_notion_client()
 
         # Permite sobrescrever credenciais por chamada

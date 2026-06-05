@@ -13,13 +13,14 @@ CapabilityNotSupported deve ser levantado nos casos corretos.
 
 from __future__ import annotations
 
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from video_kb.models import SourceMetadata
 from video_kb.providers.anthropic_provider import AnthropicProvider
-from video_kb.providers.base import CapabilityNotSupported
+from video_kb.providers.base import AUDIO_CHUNK_LIMIT_BYTES, CapabilityNotSupported
 from video_kb.providers.gemini_provider import GeminiProvider
 from video_kb.providers.local_provider import LocalProvider
 from video_kb.providers.openai_provider import OpenAIProvider
@@ -68,6 +69,56 @@ class OpenAICapabilities(unittest.TestCase):
                         None,
                     )
         self.assertIsInstance(result.text, str)
+
+    def test_transcribe_chunks_usam_duracao_real_para_offset(self) -> None:
+        chunks = [Path("/tmp/chunk-1.mp3"), Path("/tmp/chunk-2.mp3")]
+
+        with patch("video_kb.media.split_audio", return_value=chunks):
+            with patch("video_kb.media.probe_duration", side_effect=[123.0, 45.0]):
+                with patch.object(
+                    Path,
+                    "stat",
+                    return_value=MagicMock(st_size=AUDIO_CHUNK_LIMIT_BYTES + 1),
+                ):
+                    with patch.object(
+                        self.provider,
+                        "_transcribe_chunk",
+                        side_effect=[("parte 1", []), ("parte 2", [])],
+                    ) as transcribe_chunk:
+                        result = self.provider._transcribe(
+                            Path("/tmp/fake.mp3"),
+                            Path("/tmp/chunks"),
+                            None,
+                        )
+
+        offsets = [call.args[1] for call in transcribe_chunk.call_args_list]
+        self.assertEqual(offsets, [0.0, 123.0])
+        self.assertEqual(result.text, "parte 1\nparte 2")
+
+    def test_transcribe_chunk_retry_reabre_handle(self) -> None:
+        mock_client = MagicMock()
+        handles = []
+        resp = MagicMock()
+        resp.text = "ola mundo"
+        resp.model_dump.return_value = {"text": "ola mundo", "segments": []}
+
+        def create(**kwargs):
+            handles.append(kwargs["file"])
+            if len(handles) == 1:
+                raise TypeError("timestamp_granularities nao suportado")
+            return resp
+
+        mock_client.audio.transcriptions.create.side_effect = create
+        self.provider._client = mock_client
+
+        with tempfile.NamedTemporaryFile() as tmp:
+            result = self.provider._transcribe_chunk(Path(tmp.name), 0.0, None)
+
+        self.assertEqual(result[0], "ola mundo")
+        self.assertEqual(len(handles), 2)
+        self.assertIsNot(handles[0], handles[1])
+        self.assertTrue(handles[0].closed)
+        self.assertTrue(handles[1].closed)
 
     def test_embed_retorna_lista(self) -> None:
         mock_client = MagicMock()
@@ -133,6 +184,32 @@ class LocalCapabilities(unittest.TestCase):
         result = self.provider._embed(["frase teste"])
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0], [0.1, 0.2])
+
+    def test_transcribe_chunks_usam_duracao_real_para_offset(self) -> None:
+        chunks = [Path("/tmp/local-chunk-1.mp3"), Path("/tmp/local-chunk-2.mp3")]
+        self.provider._whisper = MagicMock()
+
+        with patch("video_kb.media.split_audio", return_value=chunks):
+            with patch("video_kb.media.probe_duration", side_effect=[77.5, 12.0]):
+                with patch.object(
+                    Path,
+                    "stat",
+                    return_value=MagicMock(st_size=AUDIO_CHUNK_LIMIT_BYTES + 1),
+                ):
+                    with patch.object(
+                        self.provider,
+                        "_transcribe_chunk",
+                        side_effect=[("local 1", []), ("local 2", [])],
+                    ) as transcribe_chunk:
+                        result = self.provider._transcribe(
+                            Path("/tmp/fake.mp3"),
+                            Path("/tmp/chunks"),
+                            None,
+                        )
+
+        offsets = [call.args[2] for call in transcribe_chunk.call_args_list]
+        self.assertEqual(offsets, [0.0, 77.5])
+        self.assertEqual(result.text, "local 1\nlocal 2")
 
 
 # ---------------------------------------------------------------------------
