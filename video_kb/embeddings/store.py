@@ -252,11 +252,9 @@ class EmbeddingStore:
             return []
 
         if run_ids is not None:
-            placeholders = ",".join("?" * len(run_ids))
-            rows = conn.execute(
-                f"SELECT * FROM embeddings WHERE run_id IN ({placeholders})",  # noqa: S608
-                list(run_ids),
-            ).fetchall()
+            placeholders = ",".join("?" for _ in run_ids)
+            query = "SELECT * FROM embeddings WHERE run_id IN (" + placeholders + ")"
+            rows = conn.execute(query, list(run_ids)).fetchall()
         else:
             rows = conn.execute("SELECT * FROM embeddings").fetchall()
 

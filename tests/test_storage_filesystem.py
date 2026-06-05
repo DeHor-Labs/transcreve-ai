@@ -49,9 +49,12 @@ def _make_artifacts(run_dir: Path) -> object:
 
 class FilesystemBackendSave(unittest.TestCase):
     def setUp(self) -> None:
-        self._tmp = tempfile.mkdtemp()
-        self._run_dir = Path(self._tmp) / "run-test"
+        self._tmp = tempfile.TemporaryDirectory()
+        self._run_dir = Path(self._tmp.name) / "run-test"
         self._run_dir.mkdir()
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
 
     def test_save_retorna_storage_ref(self) -> None:
         from video_kb.storage.base import StorageRef

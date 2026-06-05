@@ -15,6 +15,7 @@ import sys
 import unittest
 import warnings
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import patch
 
 from video_kb.providers.registry import (
@@ -49,7 +50,7 @@ class RegistryGetProvider(unittest.TestCase):
 
     def test_get_openai_retorna_instancia(self) -> None:
         # A lib openai esta instalada no .venv do projeto - import real e ok aqui
-        provider = load_provider("openai")
+        provider = cast(Any, load_provider("openai"))
         from video_kb.providers.base import AIProvider
 
         self.assertIsInstance(provider, AIProvider)
@@ -69,6 +70,7 @@ class RegistryGetProvider(unittest.TestCase):
             transcribe_model="whisper-custom",
             language="pt",
         )
+        provider = cast(Any, provider)
 
         self.assertEqual(provider.vision_model, "gpt-vision-custom")
         self.assertEqual(provider.transcribe_model, "whisper-custom")
@@ -76,6 +78,7 @@ class RegistryGetProvider(unittest.TestCase):
 
     def test_local_recebe_override_de_whisper(self) -> None:
         provider = load_provider("local", transcribe_model="small")
+        provider = cast(Any, provider)
 
         self.assertEqual(provider.whisper_model, "small")
 

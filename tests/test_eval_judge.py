@@ -69,10 +69,14 @@ class TestToFloat(unittest.TestCase):
         self.assertEqual(self.to_float(8), 8.0)
 
     def test_float_value(self) -> None:
-        self.assertAlmostEqual(self.to_float(7.5), 7.5)
+        value = self.to_float(7.5)
+        assert value is not None
+        self.assertAlmostEqual(value, 7.5)
 
     def test_string_number(self) -> None:
-        self.assertAlmostEqual(self.to_float("9"), 9.0)
+        value = self.to_float("9")
+        assert value is not None
+        self.assertAlmostEqual(value, 9.0)
 
     def test_none_returns_none(self) -> None:
         self.assertIsNone(self.to_float(None))
@@ -89,6 +93,7 @@ class TestCalcMedia(unittest.TestCase):
 
     def test_three_values(self) -> None:
         result = self.calc(8.0, 7.0, 9.0)
+        assert result is not None
         self.assertAlmostEqual(result, 8.0)
 
     def test_all_none_returns_none(self) -> None:
@@ -97,10 +102,12 @@ class TestCalcMedia(unittest.TestCase):
     def test_partial_none_ignores_none(self) -> None:
         # media de 6 e 8 = 7
         result = self.calc(6.0, None, 8.0)
+        assert result is not None
         self.assertAlmostEqual(result, 7.0)
 
     def test_single_value(self) -> None:
         result = self.calc(5.0)
+        assert result is not None
         self.assertAlmostEqual(result, 5.0)
 
 
@@ -129,6 +136,9 @@ class TestRunJudgeMocked(unittest.TestCase):
 
         self.assertIsNone(result.error)
         self.assertIsNone(result.skipped)
+        assert result.cobertura is not None
+        assert result.coerencia is not None
+        assert result.utilidade is not None
         self.assertAlmostEqual(result.cobertura, 8.0)
         self.assertAlmostEqual(result.coerencia, 7.0)
         self.assertAlmostEqual(result.utilidade, 9.0)
@@ -145,6 +155,7 @@ class TestRunJudgeMocked(unittest.TestCase):
             result = run_judge(_make_synthesis(), "openai")
 
         # media de 6, 8, 7 = 7.0
+        assert result.nota_geral is not None
         self.assertAlmostEqual(result.nota_geral, 7.0)
 
     def test_provider_sem_synthesize_retorna_skipped(self) -> None:
@@ -184,6 +195,7 @@ class TestRunJudgeMocked(unittest.TestCase):
             result = run_judge(_make_synthesis(), "openai")
 
         self.assertIsNotNone(result.error)
+        assert result.error is not None
         self.assertIn("parse failed", result.error)
         self.assertIsNone(result.cobertura)
 
@@ -198,6 +210,7 @@ class TestRunJudgeMocked(unittest.TestCase):
             result = run_judge(_make_synthesis(), "openai")
 
         self.assertIsNotNone(result.error)
+        assert result.error is not None
         self.assertIn("chamada ao judge falhou", result.error)
 
     def test_judge_off_by_default_nao_chama_provider(self) -> None:
@@ -226,6 +239,7 @@ class TestRunJudgeMocked(unittest.TestCase):
             result = run_judge(_make_synthesis(), "openai")
 
         self.assertIsNone(result.error)
+        assert result.cobertura is not None
         self.assertAlmostEqual(result.cobertura, 9.0)
         self.assertEqual(result.justificativa, "Excelente.")
 

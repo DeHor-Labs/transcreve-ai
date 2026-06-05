@@ -15,6 +15,7 @@ import tempfile
 import unittest
 import uuid
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 # ---------------------------------------------------------------------------
@@ -27,7 +28,7 @@ def _unique_hash() -> str:
     return f"hash-{uuid.uuid4().hex}"
 
 
-def _make_options(out_dir: Path, index_db: str = "", **kwargs: object) -> object:
+def _make_options(out_dir: Path, index_db: str = "", **kwargs: object) -> Any:
     from video_kb.pipeline import PipelineOptions
 
     defaults: dict[str, object] = {
@@ -38,7 +39,7 @@ def _make_options(out_dir: Path, index_db: str = "", **kwargs: object) -> object
         "index_db": index_db or None,
     }
     defaults.update(kwargs)
-    return PipelineOptions(out_dir=out_dir, **defaults)  # type: ignore[arg-type]
+    return PipelineOptions(out_dir=out_dir, **cast(dict[str, Any], defaults))
 
 
 def _patch_pipeline_heavy(source_hash: str | None = None) -> list[object]:
@@ -51,8 +52,8 @@ def _patch_pipeline_heavy(source_hash: str | None = None) -> list[object]:
     if source_hash is None:
         source_hash = _unique_hash()
 
-    fake_media = MagicMock()
-    fake_media.__str__ = lambda s: "/tmp/video.mp4"
+    fake_media = cast(Any, MagicMock())
+    fake_media.__str__.return_value = "/tmp/video.mp4"
     fake_meta = SourceMetadata(source="video.mp4", title="Backcompat Test")
 
     return [
@@ -71,10 +72,10 @@ def _patch_pipeline_heavy(source_hash: str | None = None) -> list[object]:
 
 
 def _run_pipeline_with_patches(
-    pipeline: object,
+    pipeline: Any,
     source: str,
     extra_patches: list[object] | None = None,
-) -> object:
+) -> Any:
     """Executa pipeline.run() com os patches ativos. Retorna resultado."""
     patches = _patch_pipeline_heavy()
     if extra_patches:

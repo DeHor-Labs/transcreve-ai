@@ -159,7 +159,10 @@ class TestChunkDossier(unittest.TestCase):
         analysis = _make_analysis(chapters=chapters)
         chunks = chunk_dossier(analysis, "run-001")
         cap = next(c for c in chunks if c.chunk_type == "chapter")
-        self.assertAlmostEqual(cap.chapter_start, 42.5)
+        chapter_start = cap.chapter_start
+        self.assertIsNotNone(chapter_start)
+        assert chapter_start is not None
+        self.assertAlmostEqual(chapter_start, 42.5)
 
     def test_chapter_start_aceita_timestamp_mm_ss(self) -> None:
         from video_kb.embeddings.chunker import chunk_dossier
@@ -168,7 +171,10 @@ class TestChunkDossier(unittest.TestCase):
         analysis = _make_analysis(chapters=chapters)
         chunks = chunk_dossier(analysis, "run-001")
         cap = next(c for c in chunks if c.chunk_type == "chapter")
-        self.assertAlmostEqual(cap.chapter_start, 62.5)
+        chapter_start = cap.chapter_start
+        self.assertIsNotNone(chapter_start)
+        assert chapter_start is not None
+        self.assertAlmostEqual(chapter_start, 62.5)
 
     def test_chapter_start_aceita_timestamp_hh_mm_ss(self) -> None:
         from video_kb.embeddings.chunker import chunk_dossier
@@ -177,7 +183,10 @@ class TestChunkDossier(unittest.TestCase):
         analysis = _make_analysis(chapters=chapters)
         chunks = chunk_dossier(analysis, "run-001")
         cap = next(c for c in chunks if c.chunk_type == "chapter")
-        self.assertAlmostEqual(cap.chapter_start, 3723.5)
+        chapter_start = cap.chapter_start
+        self.assertIsNotNone(chapter_start)
+        assert chapter_start is not None
+        self.assertAlmostEqual(chapter_start, 3723.5)
 
     def test_chapter_start_timestamp_invalido_nao_e_inserido(self) -> None:
         from video_kb.embeddings.chunker import chunk_dossier
@@ -427,6 +436,16 @@ class TestSearchRetrieval(unittest.TestCase):
 
         self.assertEqual(hits, [])
         provider.embed.assert_not_called()
+
+
+class TestEmbeddingStoreSearch(unittest.TestCase):
+    def test_search_run_ids_vazio_retorna_lista_vazia(self) -> None:
+        from video_kb.embeddings.store import EmbeddingStore
+
+        db = _tmp_db()
+        with EmbeddingStore(db) as store:
+            hits = store.search([0.1, 0.2, 0.3, 0.4], limit=5, run_ids=[])
+            self.assertEqual(hits, [])
 
 
 # ---------------------------------------------------------------------------

@@ -13,8 +13,9 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+from video_kb.pipeline import PipelineOptions
 from video_kb.providers.registry import _DEFAULT_PROVIDER, resolve_provider_name
 
 
@@ -46,9 +47,7 @@ class AiOffDegradadaLocal(unittest.TestCase):
     A sintese local deve funcionar sem rede.
     """
 
-    def _build_options(self, ai_mode: str = "off") -> object:
-        from video_kb.pipeline import PipelineOptions
-
+    def _build_options(self, ai_mode: str = "off") -> PipelineOptions:
         return PipelineOptions(
             out_dir=Path("/tmp"),
             ai_mode=ai_mode,
@@ -119,6 +118,110 @@ class AiOffDegradadaLocal(unittest.TestCase):
 
         synth = _local_synthesis(result)
         self.assertIsInstance(synth, KnowledgeSynthesis)
+
+
+class PipelineAiModeDegradacao(unittest.TestCase):
+    def _make_options(self, out_dir: Path, ai_mode: str) -> PipelineOptions:
+        return PipelineOptions(
+            out_dir=out_dir,
+            ai_mode=ai_mode,
+            provider_name="local",
+            index_db=str(out_dir / "index.db"),
+        )
+
+    def test_full_nao_faz_fallback_local_na_falha(self) -> None:
+        from video_kb.models import SourceMetadata, TranscriptSegment
+        from video_kb.pipeline import VideoKnowledgePipeline
+
+        fake_meta = SourceMetadata(source="video.mp4", title="Teste pipeline")
+
+        def fake_fetch_media(
+            _source: str, run_dir: Path, **_kwargs: object
+        ) -> tuple[Path, SourceMetadata]:
+            return Path(run_dir) / "video.mp4", fake_meta
+
+        provider = MagicMock()
+        provider.transcribe.return_value = MagicMock(
+            text="ok", segments=[TranscriptSegment(0.0, 0.1, "ok")]
+        )
+        provider.synthesize.side_effect = RuntimeError("sintese falhou")
+
+        with tempfile.TemporaryDirectory() as d:
+            out_dir = Path(d) / "outputs"
+            out_dir.mkdir()
+            pipeline = VideoKnowledgePipeline(self._make_options(out_dir, ai_mode="full"))
+
+            patches = [
+                patch("video_kb.pipeline.fetch_media", side_effect=fake_fetch_media),
+                patch("video_kb.pipeline.extract_audio"),
+                patch("video_kb.pipeline.extract_frames", return_value=[]),
+                patch("video_kb.pipeline.probe_duration", return_value=60.0),
+                patch("video_kb.pipeline.ocr_image", return_value=""),
+                patch("video_kb.pipeline.choose_language", return_value=("por", None)),
+                patch("video_kb.pipeline.write_json"),
+                patch("video_kb.pipeline.write_markdown"),
+                patch("video_kb.pipeline.sha256_url", return_value="hash-unico"),
+                patch("video_kb.pipeline.sha256_file", return_value="hash-unico"),
+                patch("video_kb.pipeline.ensure_dir", side_effect=lambda p: Path(str(p))),
+                patch("video_kb.pipeline.load_provider", return_value=provider),
+            ]
+            for p in patches:
+                p.start()
+            try:
+                with self.assertRaises(RuntimeError):
+                    pipeline.run("video.mp4")
+            finally:
+                for p in reversed(patches):
+                    p.stop()
+
+    def test_auto_faz_fallback_local_com_warning(self) -> None:
+        from video_kb.models import SourceMetadata, TranscriptSegment
+        from video_kb.pipeline import VideoKnowledgePipeline
+
+        fake_meta = SourceMetadata(source="video.mp4", title="Teste pipeline")
+
+        def fake_fetch_media(
+            _source: str, run_dir: Path, **_kwargs: object
+        ) -> tuple[Path, SourceMetadata]:
+            return Path(run_dir) / "video.mp4", fake_meta
+
+        provider = MagicMock()
+        provider.transcribe.return_value = MagicMock(
+            text="ok", segments=[TranscriptSegment(0.0, 0.1, "ok")]
+        )
+        provider.synthesize.side_effect = RuntimeError("sintese falhou")
+
+        with tempfile.TemporaryDirectory() as d:
+            out_dir = Path(d) / "outputs"
+            out_dir.mkdir()
+            pipeline = VideoKnowledgePipeline(self._make_options(out_dir, ai_mode="auto"))
+
+            patches = [
+                patch("video_kb.pipeline.fetch_media", side_effect=fake_fetch_media),
+                patch("video_kb.pipeline.extract_audio"),
+                patch("video_kb.pipeline.extract_frames", return_value=[]),
+                patch("video_kb.pipeline.probe_duration", return_value=60.0),
+                patch("video_kb.pipeline.ocr_image", return_value=""),
+                patch("video_kb.pipeline.choose_language", return_value=("por", None)),
+                patch("video_kb.pipeline.write_json"),
+                patch("video_kb.pipeline.write_markdown"),
+                patch("video_kb.pipeline.sha256_url", return_value="hash-unico"),
+                patch("video_kb.pipeline.sha256_file", return_value="hash-unico"),
+                patch("video_kb.pipeline.ensure_dir", side_effect=lambda p: Path(str(p))),
+                patch("video_kb.pipeline.load_provider", return_value=provider),
+            ]
+            for p in patches:
+                p.start()
+            try:
+                result = pipeline.run("video.mp4")
+                self.assertEqual(result.synthesis.raw.get("mode"), "local")
+                self.assertTrue(
+                    any("Camada de IA falhou" in w for w in result.warnings),
+                    f"warnings inesperados: {result.warnings}",
+                )
+            finally:
+                for p in reversed(patches):
+                    p.stop()
 
 
 class RunIdSeguro(unittest.TestCase):

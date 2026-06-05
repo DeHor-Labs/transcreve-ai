@@ -15,6 +15,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 # ---------------------------------------------------------------------------
@@ -143,7 +144,7 @@ class ObsidianBackendSave(unittest.TestCase):
 
         dest = Path(ref.markdown_path)
         post = frontmatter.load(str(dest))
-        tags = post.metadata.get("tags", [])
+        tags = cast(list[str], post.metadata.get("tags", []))
         self.assertIn("python", tags)
         self.assertIn("dev", tags)
 

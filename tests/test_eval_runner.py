@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 
@@ -339,9 +339,11 @@ class TestEvalRunnerMocked(unittest.TestCase):
                     options_cls=PipelineOptions,
                 )
 
-            self.assertEqual(cr.status, "ok")
-            self.assertIsNotNone(cr.judge)
-            self.assertIn("llm caiu", cr.judge["judge_error"])
+        self.assertEqual(cr.status, "ok")
+        self.assertIsNotNone(cr.judge)
+        judge_data = cast(dict[str, Any], cr.judge)
+        self.assertIn("judge_error", judge_data)
+        self.assertIn("llm caiu", judge_data["judge_error"])
 
     def test_run_one_error_message_eh_sanitizado(self) -> None:
         import tempfile

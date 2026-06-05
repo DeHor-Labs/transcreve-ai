@@ -31,12 +31,12 @@ class TestDetectSource(unittest.TestCase):
         port: int | None,
         *args: object,
         **kwargs: object,
-    ) -> list[tuple[object, object, object, object, tuple[object, ...]]]:
+    ) -> list[tuple[int, int, int, str, tuple[object, ...]]]:
         normalized = str(host).lower().strip("[]").rstrip(".")
         if normalized == "dns-failure.example":
             raise OSError("mocked DNS failure")
         addresses = cls._DNS_RECORDS.get(normalized, ("93.184.216.34",))
-        resolved = []
+        resolved: list[tuple[int, int, int, str, tuple[object, ...]]] = []
         for address in addresses:
             family = socket.AF_INET6 if ":" in address else socket.AF_INET
             sockaddr: tuple[object, ...]

@@ -9,11 +9,24 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from typing import TypedDict, Unpack
 from unittest.mock import MagicMock, patch
+
+from video_kb.embeddings.store import SearchHit
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+class _SearchHitKwargs(TypedDict, total=False):
+    run_id: str
+    title: str
+    source_url: str
+    chunk_type: str
+    excerpt: str
+    score: float
+    chapter_start: float | None
 
 
 def _make_mock_provider(dim: int = 4) -> MagicMock:
@@ -40,18 +53,17 @@ def _make_test_app(tmp_dir: str):  # type: ignore[no-untyped-def]
     return create_app(out_dir=Path(tmp_dir), index_db=index_db)
 
 
-def _make_search_hit(**kwargs) -> object:  # type: ignore[no-untyped-def]
-    from video_kb.embeddings.store import SearchHit
+def _make_search_hit(**kwargs: Unpack[_SearchHitKwargs]) -> SearchHit:
 
-    defaults = dict(
-        run_id="run-001",
-        title="Video Teste",
-        source_url="https://example.com/video",
-        chunk_type="summary",
-        excerpt="Trecho de teste.",
-        score=0.9,
-        chapter_start=None,
-    )
+    defaults: _SearchHitKwargs = {
+        "run_id": "run-001",
+        "title": "Video Teste",
+        "source_url": "https://example.com/video",
+        "chunk_type": "summary",
+        "excerpt": "Trecho de teste.",
+        "score": 0.9,
+        "chapter_start": None,
+    }
     defaults.update(kwargs)
     return SearchHit(**defaults)
 

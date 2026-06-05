@@ -304,6 +304,8 @@ class VideoKnowledgePipeline:
                 try:
                     result.synthesis = provider.synthesize(ctx)
                 except CapabilityNotSupported:
+                    if self.options.ai_mode == "full":
+                        raise
                     result.warnings.append(
                         f"Sintese nao suportada pelo provider '{provider_name}';"
                         " usando sintese local."
@@ -311,6 +313,8 @@ class VideoKnowledgePipeline:
                     result.synthesis = _local_synthesis(result)
 
             except Exception as exc:  # noqa: BLE001
+                if self.options.ai_mode == "full":
+                    raise
                 result.warnings.append(
                     f"Camada de IA falhou; artefatos locais foram mantidos: {exc}"
                 )

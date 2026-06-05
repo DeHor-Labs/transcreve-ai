@@ -15,6 +15,7 @@ import time
 import unittest
 import uuid
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
 
 
@@ -28,7 +29,7 @@ def _unique_url() -> str:
 # ---------------------------------------------------------------------------
 
 
-def _make_fake_result(workdir: str) -> object:
+def _make_fake_result(workdir: str):
     from video_kb.models import AnalysisResult, KnowledgeSynthesis, SourceMetadata
 
     meta = SourceMetadata(
@@ -539,8 +540,9 @@ class TestSubmitJobComPipelineMockado(unittest.TestCase):
                     status = str(data["status"])
 
                 self.assertEqual(status, "failed")
-                progress = data.get("progress") or {}
-                self.assertIsInstance(progress, dict)
+                progress_raw = data.get("progress")
+                self.assertIsInstance(progress_raw, dict)
+                progress = cast(dict[str, object], progress_raw)
                 detail = str(progress.get("detail", ""))
                 self.assertNotIn("token=secret", detail)
                 self.assertNotIn("/tmp/vkb_upload_secret", detail)

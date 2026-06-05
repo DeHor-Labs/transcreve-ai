@@ -13,7 +13,8 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from typing import Any
+from unittest.mock import _patch, patch
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -147,19 +148,22 @@ class DedupeComPipelineMocado(unittest.TestCase):
     O pipeline pesado (ffmpeg, whisper, etc) e mockado completamente.
     """
 
-    def _patch_pipeline_heavy(self) -> list[object]:
+    def _patch_pipeline_heavy(self) -> list[_patch]:
         """Retorna lista de patches para o pipeline pesado."""
         from video_kb.models import SourceMetadata
 
-        fake_media = MagicMock()
-        fake_media.__str__ = lambda s: "/tmp/video.mp4"
         fake_meta = SourceMetadata(
             source="https://example.com/v",
             title="Mock Video",
         )
 
-        patches = [
-            patch("video_kb.pipeline.fetch_media", return_value=(fake_media, fake_meta)),
+        def fake_fetch_media(
+            _source: str, run_dir: Path, **_kwargs: object
+        ) -> tuple[Path, SourceMetadata]:
+            return Path(run_dir) / "video.mp4", fake_meta
+
+        patches: list[_patch[Any]] = [
+            patch("video_kb.pipeline.fetch_media", side_effect=fake_fetch_media),
             patch("video_kb.pipeline.extract_audio"),
             patch("video_kb.pipeline.extract_frames", return_value=[]),
             patch("video_kb.pipeline.probe_duration", return_value=60.0),
@@ -196,13 +200,14 @@ class DedupeComPipelineMocado(unittest.TestCase):
             pipeline = VideoKnowledgePipeline(opts)  # type: ignore[arg-type]
 
             patches = self._patch_pipeline_heavy()
-            [p.start() for p in patches]
+            for p in patches:
+                p.start()
             try:
                 with self.assertRaises(DuplicateRunError) as ctx:
                     pipeline.run("https://example.com/v")
                 self.assertEqual(ctx.exception.existing["id"], "run-anterior")
             finally:
-                for p in patches:
+                for p in reversed(patches):
                     p.stop()
 
     def test_force_true_nao_levanta_duplicate_error(self) -> None:
@@ -234,7 +239,7 @@ class DedupeComPipelineMocado(unittest.TestCase):
                 result = pipeline.run("https://example.com/v")
                 self.assertIsNotNone(result)
             finally:
-                for p in patches:
+                for p in reversed(patches):
                     p.stop()
 
     def test_indice_corrompido_nao_derruba_analise(self) -> None:
@@ -265,7 +270,7 @@ class DedupeComPipelineMocado(unittest.TestCase):
                 result = pipeline.run("https://example.com/v")
                 self.assertIsNotNone(result)
             finally:
-                for p in patches:
+                for p in reversed(patches):
                     p.stop()
 
 

@@ -45,8 +45,10 @@ class RunIndexSchema(unittest.TestCase):
     def _make_index(self):  # type: ignore[return]
         from video_kb.index import RunIndex
 
-        tmp = tempfile.mktemp(suffix=".db")
-        return RunIndex(Path(tmp))
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        self.addCleanup(lambda: Path(tmp.name).unlink(missing_ok=True))
+        return RunIndex(Path(tmp.name))
 
     def test_connect_cria_db(self) -> None:
         from video_kb.index import RunIndex
