@@ -171,6 +171,27 @@ class LocalProvider(AIProvider):
             raw=raw,
         )
 
+    def _complete(self, prompt: str) -> str:
+        hits = _extract_rag_hits(prompt)
+        if not hits:
+            return (
+                "Nao encontrei informacao suficiente nos trechos recuperados para "
+                "responder com seguranca."
+            )
+
+        lines = ["Resposta local baseada nos trechos indexados:"]
+        seen_sources: list[str] = []
+        for excerpt, title, chunk_type in hits[:5]:
+            clean_excerpt = compact_text(excerpt, 260)
+            lines.append(f"- {clean_excerpt} ({title}, {chunk_type})")
+            if title not in seen_sources:
+                seen_sources.append(title)
+
+        if seen_sources:
+            lines.append("")
+            lines.append("Fontes: " + ", ".join(seen_sources[:5]))
+        return "\n".join(lines)
+
     # ------------------------------------------------------------------
     # embed
     # ------------------------------------------------------------------
@@ -404,6 +425,24 @@ def _extract_questions(transcript: str) -> list[str]:
         if len(questions) >= 10:
             break
     return questions
+
+
+def _extract_rag_hits(prompt: str) -> list[tuple[str, str, str]]:
+    hits: list[tuple[str, str, str]] = []
+    pattern = (
+        r'^\[\d+\]\s+"(?P<excerpt>.*)"\s+-\s+'
+        r"(?P<title>.*)\s+\((?P<kind>[^()]*)\)\s*$"
+    )
+    for line in prompt.splitlines():
+        match = re.match(pattern, line)
+        if not match:
+            continue
+        excerpt = match.group("excerpt").strip()
+        title = match.group("title").strip() or "video"
+        kind = match.group("kind").strip() or "trecho"
+        if excerpt:
+            hits.append((excerpt, title, kind))
+    return hits
 
 
 def _safe_chunk_duration(chunk: Path, *, fallback: float, probe: Any) -> float:

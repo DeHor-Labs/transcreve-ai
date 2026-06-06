@@ -57,6 +57,9 @@ web = [
   "python-multipart>=0.0.9",
   "sse-starlette>=2.1.0",
 ]
+mcp = [
+  "mcp>=1.0.0",
+]
 rag = [
   "numpy>=1.24.0",
 ]
@@ -79,6 +82,7 @@ Issues = "https://github.com/nikolasdehor/transcreve-ai/issues"
 transcreveai = "video_kb.cli:main"
 transcreve-ai = "video_kb.cli:main"
 video-kb = "video_kb.cli:main"
+transcreveai-mcp = "video_kb.mcp_server:main"
 
 [tool.setuptools.packages.find]
 include = ["video_kb*"]

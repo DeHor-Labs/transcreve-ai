@@ -11,7 +11,9 @@ from .ai import (
     select_visual_frames,
     transcript_near,
 )
-from .downloader import fetch_media
+from .content_intelligence import write_content_artifacts
+from .downloader import DownloadedMedia
+from .downloader import fetch_media_bundle as fetch_media
 from .index import DuplicateRunError, RunIndex, resolve_index_path
 from .media import extract_audio, extract_frames, probe_duration
 from .models import AnalysisResult, FrameObservation, KnowledgeSynthesis
@@ -23,6 +25,7 @@ from .providers import (
     resolve_provider_name,
 )
 from .report import write_markdown
+from .skill_intelligence import write_skill_artifacts
 from .storage import ArtifactPaths, load_storage, resolve_storage_name
 from .utils import (
     ensure_dir,
@@ -55,6 +58,7 @@ class PipelineOptions:
     force: bool = False
     storage_backend: str = "filesystem"
     index_db: str | None = None
+    templates: tuple[str, ...] = ()
     # --- callback opcional de progresso (web UI) ---
     # Assinatura: on_progress(step: str, detail: str) -> None
     # Default None: comportamento identico ao anterior (so prints)
@@ -62,6 +66,7 @@ class PipelineOptions:
 
 
 _RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 def _resolve_run_id(source: str, requested_run_id: str = "") -> str:
@@ -152,14 +157,25 @@ class VideoKnowledgePipeline:
             except Exception:  # noqa: BLE001
                 pass
 
+        warnings = []
+
         _emit("download", "Baixando ou copiando video...")
-        media_path, metadata = fetch_media(
+        download_result = fetch_media(
             source,
             run_dir,
             cookies_browser=self.options.cookies_browser,
             cookies=self.options.cookies,
             video_format=self.options.video_format,
         )
+        if isinstance(download_result, DownloadedMedia):
+            media_path = download_result.primary_path
+            media_paths = download_result.media_paths or [media_path]
+            metadata = download_result.metadata
+            warnings.extend(download_result.warnings)
+        else:
+            media_path, metadata = download_result
+            media_paths = [media_path]
+        metadata.media_kind = _infer_media_kind(media_paths, current=metadata.media_kind)
 
         # Para arquivos locais, calcula hash apos download
         if not source_is_url:
@@ -201,7 +217,6 @@ class VideoKnowledgePipeline:
                 except Exception:  # noqa: BLE001
                     pass
 
-        warnings = []
         try:
             metadata.duration = metadata.duration or probe_duration(media_path)
         except Exception as exc:  # noqa: BLE001
@@ -209,18 +224,26 @@ class VideoKnowledgePipeline:
 
         _emit("audio", "Extraindo audio...")
         audio_path = run_dir / "audio.mp3"
-        try:
-            extract_audio(media_path, audio_path)
-        except Exception as exc:  # noqa: BLE001
-            warnings.append(f"Nao foi possivel extrair audio: {exc}")
+        audio_source = _first_audio_capable_media(media_paths)
+        if audio_source is None:
+            if metadata.media_kind == "carousel":
+                warnings.append("Carrossel de imagens; transcricao de audio nao se aplica.")
+            else:
+                warnings.append("Fonte de imagem estatica; sem audio para transcrever.")
             audio_path = None  # type: ignore[assignment]
+        else:
+            try:
+                extract_audio(audio_source, audio_path)
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(f"Nao foi possivel extrair audio: {exc}")
+                audio_path = None  # type: ignore[assignment]
 
         _emit("frames", "Extraindo frames...")
         frames_dir = ensure_dir(run_dir / "frames")
-        frame_paths = extract_frames(
-            media_path,
+        frame_paths = _extract_collection_frames(
+            media_paths,
             frames_dir,
-            duration=metadata.duration,
+            primary_duration=metadata.duration,
             interval=self.options.frame_interval,
             max_frames=self.options.max_frames,
         )
@@ -248,6 +271,7 @@ class VideoKnowledgePipeline:
             media_path=str(media_path.relative_to(run_dir)),
             audio_path=str(audio_path.relative_to(run_dir)) if audio_path else "",
             metadata=metadata,
+            media_paths=[str(path.relative_to(run_dir)) for path in media_paths],
             frames=frames,
             warnings=warnings,
         )
@@ -255,7 +279,7 @@ class VideoKnowledgePipeline:
         provider_name = resolve_provider_name(self.options.provider_name or None)
         use_ai = self._should_use_ai(provider_name)
 
-        if use_ai and audio_path:
+        if use_ai:
             _emit("ai", f"Transcrevendo e descrevendo com IA ({provider_name})...")
             try:
                 provider = load_provider(
@@ -266,13 +290,24 @@ class VideoKnowledgePipeline:
                 )
 
                 # --- transcricao ---
-                transcribe_result = provider.transcribe(
-                    audio_path,
-                    run_dir / "audio_chunks",
-                    language=self.options.language,
-                )
-                result.transcript_text = transcribe_result.text
-                result.transcript_segments = transcribe_result.segments
+                if audio_path and "transcribe" in provider.capabilities():
+                    transcribe_result = provider.transcribe(
+                        audio_path,
+                        run_dir / "audio_chunks",
+                        language=self.options.language,
+                    )
+                    result.transcript_text = transcribe_result.text
+                    result.transcript_segments = transcribe_result.segments
+                elif audio_path:
+                    result.warnings.append(
+                        f"Transcricao nao suportada pelo provider '{provider_name}'."
+                    )
+                elif result.metadata.media_kind == "carousel":
+                    result.warnings.append("Carrossel sem audio; usando OCR/visao por slide.")
+                else:
+                    result.warnings.append(
+                        "Audio nao disponivel; seguindo com OCR/visao quando suportado."
+                    )
 
                 # --- visao por frame ---
                 visual_indexes = select_visual_frames(result.frames, self.options.visual_limit)
@@ -300,6 +335,7 @@ class VideoKnowledgePipeline:
                     metadata=result.metadata,
                     transcript_text=result.transcript_text,
                     frames=result.frames,
+                    media_kind=result.metadata.media_kind,
                 )
                 try:
                     result.synthesis = provider.synthesize(ctx)
@@ -331,6 +367,10 @@ class VideoKnowledgePipeline:
         _emit("persist", "Salvando analysis.json e knowledge.md...")
         write_json(run_dir / "analysis.json", result.to_dict())
         write_markdown(result, run_dir / "knowledge.md")
+        if "content" in self.options.templates:
+            write_content_artifacts(result, run_dir)
+        if "skill" in self.options.templates:
+            write_skill_artifacts(result, run_dir)
 
         # ------------------------------------------------------------------
         # Storage backend - gracil: falha adiciona warning mas nao aborta
@@ -421,15 +461,74 @@ def _timestamp_from_frame_name(name: str) -> float:
         return 0.0
 
 
+def _first_audio_capable_media(media_paths: list[Path]) -> Path | None:
+    for media_path in media_paths:
+        if media_path.suffix.lower() not in _IMAGE_SUFFIXES:
+            return media_path
+    return None
+
+
+def _infer_media_kind(media_paths: list[Path], current: str = "") -> str:
+    if len(media_paths) > 1:
+        return "carousel"
+    if current:
+        return current
+    if media_paths and media_paths[0].suffix.lower() in _IMAGE_SUFFIXES:
+        return "image"
+    return "video"
+
+
+def _extract_collection_frames(
+    media_paths: list[Path],
+    frames_dir: Path,
+    primary_duration: float,
+    interval: float,
+    max_frames: int,
+) -> list[Path]:
+    frame_paths: list[Path] = []
+    timestamp_offset = 0.0
+    multiple_items = len(media_paths) > 1
+
+    for media_path in media_paths:
+        if max_frames > 0 and len(frame_paths) >= max_frames:
+            break
+
+        remaining = max_frames - len(frame_paths) if max_frames > 0 else 0
+        item_max_frames = 1 if media_path.suffix.lower() in _IMAGE_SUFFIXES else remaining
+        duration = 0.0
+        if media_path.suffix.lower() not in _IMAGE_SUFFIXES:
+            try:
+                duration = probe_duration(media_path)
+            except Exception:  # noqa: BLE001
+                duration = primary_duration if not multiple_items else 0.0
+
+        new_frames = extract_frames(
+            media_path,
+            frames_dir,
+            duration=duration or (primary_duration if not multiple_items else 0.0),
+            interval=interval,
+            max_frames=item_max_frames,
+            start_index=len(frame_paths) + 1,
+            timestamp_offset=timestamp_offset,
+        )
+        frame_paths.extend(new_frames)
+        timestamp_offset += max(duration, 1.0)
+
+    return frame_paths
+
+
 def _local_synthesis(result: AnalysisResult) -> KnowledgeSynthesis:
     ocr_hits = [frame.ocr_text for frame in result.frames if frame.ocr_text]
     summary_parts = []
+    is_carousel = result.metadata.media_kind == "carousel"
     if result.metadata.title:
-        summary_parts.append(f"Video: {result.metadata.title}.")
+        label = "Carrossel" if is_carousel else "Video"
+        summary_parts.append(f"{label}: {result.metadata.title}.")
     if result.metadata.description:
         summary_parts.append(result.metadata.description[:500])
     if ocr_hits:
-        summary_parts.append(f"OCR encontrou textos em {len(ocr_hits)} frames.")
+        unit = "slides" if is_carousel else "frames"
+        summary_parts.append(f"OCR encontrou textos em {len(ocr_hits)} {unit}.")
     if not summary_parts:
         summary_parts.append(
             "Analise local concluida; ative OPENAI_API_KEY"

@@ -8,9 +8,24 @@ updates:
       time: "06:00"
       timezone: "America/Sao_Paulo"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 1
+      semver-major-days: 60
+      semver-minor-days: 14
+      semver-patch-days: 2
+    groups:
+      actions-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
     labels:
       - deps
       - deps/github-actions
+      - dependency-update
+      - triage
     commit-message:
       prefix: chore(deps)
       include: scope
@@ -22,9 +37,24 @@ updates:
       time: "06:00"
       timezone: "America/Sao_Paulo"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 1
+      semver-major-days: 60
+      semver-minor-days: 14
+      semver-patch-days: 2
+    groups:
+      pip-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
     labels:
       - deps
       - deps/pip
+      - dependency-update
+      - triage
     commit-message:
       prefix: chore(deps)
       include: scope
@@ -36,10 +66,25 @@ updates:
       time: "06:10"
       timezone: "America/Sao_Paulo"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 1
+      semver-major-days: 60
+      semver-minor-days: 14
+      semver-patch-days: 2
+    groups:
+      frontend-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
     labels:
       - deps
       - deps/npm
       - frontend
+      - dependency-update
+      - triage
     commit-message:
       prefix: chore(deps)
       include: scope

@@ -5,6 +5,7 @@ import logging
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from .index import DuplicateRunError, RunIndex, resolve_index_path
 from .pipeline import PipelineOptions, VideoKnowledgePipeline
@@ -37,16 +38,19 @@ class AgentWorkflowOptions:
     question: str | None = None
     top_k: int = 5
     index_force: bool = False
+    templates: tuple[str, ...] = ()
 
 
 @dataclass
 class AgentWorkflowResult:
     source: str
     probe: SourceProbe
+    provider: str = ""
     run_id: str = ""
     workdir: str = ""
     markdown_path: str = ""
     analysis_path: str = ""
+    template_paths: dict[str, str] = field(default_factory=dict)
     reused_existing: bool = False
     indexed: bool = False
     indexed_chunks: int = 0
@@ -86,6 +90,7 @@ def run_agent_workflow(source: str, options: AgentWorkflowOptions) -> AgentWorkf
         )
 
     storage_name = resolve_storage_name(options.storage_backend or None)
+    provider_name = _resolve_agent_provider(options.provider_name)
     pipeline_options = PipelineOptions(
         out_dir=options.out_dir,
         frame_interval=options.frame_interval,
@@ -103,6 +108,7 @@ def run_agent_workflow(source: str, options: AgentWorkflowOptions) -> AgentWorkf
         force=options.force,
         storage_backend=storage_name,
         index_db=options.index_db,
+        templates=options.templates,
     )
 
     warnings: list[str] = []
@@ -111,7 +117,14 @@ def run_agent_workflow(source: str, options: AgentWorkflowOptions) -> AgentWorkf
 
     try:
         analysis_result = VideoKnowledgePipeline(pipeline_options).run(source)
-        result = _result_from_analysis(source, probe, analysis_result, warnings)
+        result = _result_from_analysis(
+            source,
+            probe,
+            analysis_result,
+            warnings,
+            provider_name,
+            options.templates,
+        )
     except DuplicateRunError as exc:
         result = _result_from_existing(source, probe, exc.existing, warnings)
     except Exception:  # noqa: BLE001
@@ -125,6 +138,7 @@ def run_agent_workflow(source: str, options: AgentWorkflowOptions) -> AgentWorkf
         return AgentWorkflowResult(
             source=source,
             probe=probe,
+            provider=provider_name,
             warnings=failure_warnings,
         )
 
@@ -150,20 +164,35 @@ def dumps_agent_result(result: AgentWorkflowResult) -> str:
     return json.dumps(result.to_dict(), ensure_ascii=False, indent=2)
 
 
+def artifact_reference_available(reference: str) -> bool:
+    if not reference:
+        return False
+    parsed = urlparse(reference)
+    if parsed.scheme and parsed.scheme != "file":
+        return True
+    if parsed.scheme == "file":
+        return Path(parsed.path).exists()
+    return Path(reference).exists()
+
+
 def _result_from_analysis(
     source: str,
     probe: SourceProbe,
     analysis_result: Any,
     warnings: list[str],
+    provider_name: str,
+    templates: tuple[str, ...],
 ) -> AgentWorkflowResult:
     workdir = Path(str(analysis_result.workdir))
     return AgentWorkflowResult(
         source=source,
         probe=probe,
+        provider=provider_name,
         run_id=str(analysis_result.run_id),
         workdir=str(workdir),
         markdown_path=str(workdir / "knowledge.md"),
         analysis_path=str(workdir / "analysis.json"),
+        template_paths=_template_paths(workdir, templates),
         warnings=[*warnings, *list(getattr(analysis_result, "warnings", []) or [])],
     )
 
@@ -186,7 +215,7 @@ def _result_from_existing(
         workdir = ""
 
     existing_warnings = [*warnings, "Run existente reutilizado; use --force para reprocessar."]
-    if not analysis_path or not Path(analysis_path).exists():
+    if not artifact_reference_available(analysis_path):
         existing_warnings.append(
             f"Run existente '{run_id}' nao tem analysis.json disponivel; use --force."
         )
@@ -194,13 +223,57 @@ def _result_from_existing(
     return AgentWorkflowResult(
         source=source,
         probe=probe,
+        provider=str(existing.get("provider") or ""),
         run_id=run_id,
         workdir=workdir,
         markdown_path=markdown_path,
         analysis_path=analysis_path,
+        template_paths=_existing_template_paths(Path(workdir)) if workdir else {},
         reused_existing=True,
         warnings=existing_warnings,
     )
+
+
+def _template_paths(workdir: Path, templates: tuple[str, ...]) -> dict[str, str]:
+    paths: dict[str, str] = {}
+    if "content" in templates:
+        content_md = workdir / "content.md"
+        content_json = workdir / "content.json"
+        content_csv = workdir / "content.csv"
+        if content_md.exists():
+            paths["content"] = str(content_md)
+        if content_json.exists():
+            paths["content_json"] = str(content_json)
+        if content_csv.exists():
+            paths["content_csv"] = str(content_csv)
+    if "skill" in templates:
+        skill_md = workdir / "skill.md"
+        skill_json = workdir / "skill.json"
+        if skill_md.exists():
+            paths["skill"] = str(skill_md)
+        if skill_json.exists():
+            paths["skill_json"] = str(skill_json)
+    return paths
+
+
+def _existing_template_paths(workdir: Path) -> dict[str, str]:
+    paths: dict[str, str] = {}
+    content_md = workdir / "content.md"
+    content_json = workdir / "content.json"
+    content_csv = workdir / "content.csv"
+    skill_md = workdir / "skill.md"
+    skill_json = workdir / "skill.json"
+    if content_md.exists():
+        paths["content"] = str(content_md)
+    if content_json.exists():
+        paths["content_json"] = str(content_json)
+    if content_csv.exists():
+        paths["content_csv"] = str(content_csv)
+    if skill_md.exists():
+        paths["skill"] = str(skill_md)
+    if skill_json.exists():
+        paths["skill_json"] = str(skill_json)
+    return paths
 
 
 def _index_result(result: AgentWorkflowResult, options: AgentWorkflowOptions) -> None:
@@ -331,6 +404,12 @@ def _get_embed_model(provider: object, provider_name: str) -> str:
         "gemini": "text-embedding-004",
     }
     return defaults.get(provider_name, "unknown")
+
+
+def _resolve_agent_provider(raw_provider: str | None) -> str:
+    from .providers import resolve_provider_name
+
+    return resolve_provider_name(raw_provider or None)
 
 
 def _mark_latest_partial_failed(

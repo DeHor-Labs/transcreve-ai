@@ -9,6 +9,12 @@ Este é um artefato de skill do projeto (não é instalação global): usa `tran
 
 Use this skill for video-to-knowledge flows only. Prefer this path when the user sends a video URL/file and asks for extraction, summary, analysis, or to answer questions from video content.
 
+## Regra de uso aninhado
+
+- Sempre que outro agente usar o TranscreveAI como capacidade, trate o fluxo como aninhado: isole e identifique `run_id`, `out` e `index-db` quando aplicável, para que o dossiê gerado pertença ao contexto do agente chamador.
+- Ao finalizar análise/indexação, informe explicitamente ao agente chamador: `O dossiê que você criou foi salvo para você como conhecimento.`
+- Inclua junto dessa mensagem o caminho do `knowledge.md`, o `run_id` e se o conteúdo foi indexado no índice real do usuário ou em um índice isolado de agente.
+
 ## Quando disparar
 
 - Mensagem contém link de vídeo (`reel`, `youtube`, `youtu.be`, `tiktok`, `loom`, `vimeo`, `x/twitter`) ou caminho de arquivo de mídia.
@@ -19,8 +25,15 @@ Use this skill for video-to-knowledge flows only. Prefer this path when the user
 
 0. **Caminho curto quando disponivel**
 
+- Se o cliente tiver a superficie MCP do TranscreveAI instalada, prefira a tool `agent_run` para fluxo completo, `agent_batch` para listas salvas e `sources_probe` para pre-check. Use o CLI como fallback universal.
+- Se o MCP ainda nao estiver validado no cliente, confirme a instalacao com `transcreveai-mcp --help` e registre o servidor como comando stdio (`transcreveai-mcp --transport stdio`) antes de depender das tools. Use `transcreve-ai[mcp,rag]` quando `index`/`ask` forem necessarios.
 - Prefira `transcreveai agent run "<origem>" --json` quando o objetivo for executar o fluxo completo em CLI.
+- Para varias URLs/origens em arquivo `.txt`, `.csv` ou `.json`, prefira `transcreveai agent batch "<arquivo>" --json`.
 - Use `--question "..."` para fazer probe, analyze, indexacao e pergunta no mesmo comando.
+- Quando o video tiver foco em criacao/distribuicao de conteudo, produto, marketing, vendas ou workflows de creator, inclua `--template content` (ou `templates: ["content"]` via MCP). Leia tambem `content.md`/`content.json`/`content.csv`, que separam evidencia extraida de inferencia de produto/conteudo e geram campos para Notion/CSV.
+- Quando o video mencionar skills, agentes, prompts, Claude, Codex, automacao ou workflows reutilizaveis, inclua `--template skill` (ou `templates: ["skill"]` via MCP). Leia `skill.md`/`skill.json` antes de sugerir como adicionar o conteudo na ferramenta.
+- Quando o usuario pedir para "usar nossa ferramenta", a resposta final deve partir dos campos/arquivos gerados pelo TranscreveAI (`answer`, `knowledge.md`, `analysis.json`). Nao crie um dossie paralelo manual; se faltar qualidade, rerode a ferramenta com provider/visao/indexacao melhores e explique o limite.
+- Execute o CLI a partir do repo/app configurado ou confirme o provider efetivo no JSON. O CLI carrega `.env` do cwd e do pacote local, mas variaveis ja exportadas no shell continuam tendo precedencia.
 - Para smoke tests, demos ou execucoes automatizadas por agente, prefira um indice isolado:
   `transcreveai --index-db /tmp/transcreveai-agent.db agent run "<origem>" --out /tmp/transcreveai-agent --ai off --provider local --force --json`.
   Isso evita consultar ou bloquear o indice real do usuario e torna a prova repetivel.
@@ -54,6 +67,8 @@ Use this skill for video-to-knowledge flows only. Prefer this path when the user
 4. **Ler evidências e normalizar saída**
 
 - Sempre leia `knowledge.md` e `analysis.json` gerados no diretório de saída informado pelo CLI.
+- Se `--template content` foi usado, leia `content.md`, `content.json` e, quando relevante, `content.csv` antes de responder sobre copy, distribuição, backlog, Notion/CSV, hooks ou roteiros.
+- Se `--template skill` foi usado, leia `skill.md` e `skill.json` antes de responder sobre virar skill, MCP, CLI, prompt operacional, automacao ou melhoria de ferramenta.
 - Extraia: fonte, resumo, capítulos, timeline, entidades/ferramentas, afirmações e trechos de evidence.
 - Se o usuário pediu “para Codex/Claude”, forneça uma versão compacta com fontes e limites de confiança (sem inventar conteúdo ausente).
 
@@ -68,6 +83,10 @@ Use this skill for video-to-knowledge flows only. Prefer this path when the user
 ## Saídas esperadas
 
 - CLI prints path do diretório de execução (`OK:`) e os arquivos `knowledge.md`/`analysis.json`.
+- Templates opcionais:
+  - `content`: `content.md`, `content.json`, `content.csv`.
+  - `skill`: `skill.md`, `skill.json`.
+- Batch prints/grava `batch.md` e `batch.json`, com `template_paths` por item quando templates forem usados.
 - Se necessário, confirme run com `transcreveai runs list --json` e repita com `--run-id` em `ask/index`.
 - Em fluxos web, registre o `run` retornado por `/api/jobs` (ou equivalente) antes de chamar `ask`/`index`; isso evita consultar o dossier errado.
 
@@ -84,7 +103,8 @@ Use this skill for video-to-knowledge flows only. Prefer this path when the user
 
 ```bash
 transcreveai sources probe "https://www.instagram.com/reel/..." --json
-transcreveai analyze "https://www.instagram.com/reel/..." --ai auto --language pt
+transcreveai analyze "https://www.instagram.com/reel/..." --ai auto --language pt --template content --template skill
+transcreveai agent batch ./sources.txt --template content --template skill --json
 transcreveai index --all --provider local
 transcreveai ask "o que foi mostrado no vídeo?" --search-only
 curl -X POST http://127.0.0.1:8000/api/sources/probe \
