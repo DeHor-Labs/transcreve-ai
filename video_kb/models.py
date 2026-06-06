@@ -15,6 +15,7 @@ class SourceMetadata:
     description: str = ""
     tags: list[str] = field(default_factory=list)
     categories: list[str] = field(default_factory=list)
+    media_kind: str = ""
 
 
 @dataclass
@@ -53,6 +54,7 @@ class AnalysisResult:
     media_path: str
     audio_path: str
     metadata: SourceMetadata
+    media_paths: list[str] = field(default_factory=list)
     transcript_text: str = ""
     transcript_segments: list[TranscriptSegment] = field(default_factory=list)
     frames: list[FrameObservation] = field(default_factory=list)

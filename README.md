@@ -85,6 +85,18 @@ transcreveai agent run "https://www.instagram.com/reel/..." \
   --question "quais ferramentas, passos e riscos aparecem no video?" \
   --json
 
+# Creator Remix / Content Intelligence:
+transcreveai agent run "https://www.instagram.com/reel/..." \
+  --template content \
+  --template skill \
+  --json
+
+# Batch para listas salvas de URLs/origens:
+transcreveai agent batch ./sources.txt \
+  --template content \
+  --template skill \
+  --json
+
 # Or run each step manually:
 transcreveai sources probe "https://www.instagram.com/reel/..." --json
 transcreveai analyze "https://www.instagram.com/reel/..." --ai auto --language pt
@@ -98,6 +110,35 @@ Project artifacts:
 - Demo pack: [`docs/AGENT_VIDEO_INTELLIGENCE.md`](docs/AGENT_VIDEO_INTELLIGENCE.md)
 - Source support matrix: [`docs/source-support-matrix.md`](docs/source-support-matrix.md)
 
+Optional MCP server:
+
+```bash
+pip install 'transcreve-ai[mcp,rag]'
+transcreveai-mcp
+```
+
+The MCP server exposes `sources_probe`, `analyze`, `agent_run`, `index`, `ask`,
+`agent_batch`, `runs_list` and `runs_show`. The default transport is `stdio`; use
+`transcreveai-mcp --transport streamable-http --port 8765` when a client expects
+an HTTP MCP endpoint.
+
+Register the server in MCP-capable clients with a stdio command like:
+
+```json
+{
+  "mcpServers": {
+    "transcreveai": {
+      "command": "transcreveai-mcp",
+      "args": ["--transport", "stdio"]
+    }
+  }
+}
+```
+
+Validate the install with `transcreveai-mcp --help` before wiring it into Claude,
+Codex or another agent client. Use `[mcp,rag]` when the client should also call
+`index` and `ask`; `[mcp]` alone is enough for probe/analyze/run-only workflows.
+
 Install the project skill in Codex:
 
 ```bash
@@ -106,6 +147,17 @@ cp -R skills/transcreveai-video-intelligence ~/.codex/skills/
 ```
 
 Use this mode when the goal is not just a transcript, but a reusable playbook: tools/products shown on screen, prompts, steps, risks, open questions and timestamped evidence.
+
+For creator/business videos, add `--template content`. It writes `content.md`,
+`content.json` and `content.csv` next to `knowledge.md`, with a Creator Remix
+package: evidence from the video, hook candidates, angles, short script, platform
+variants, Notion/CSV fields and automation opportunities. Product/backlog notes
+are explicitly marked as inference, separate from extracted evidence.
+
+For videos about agents, prompts, Codex/Claude, automation or reusable workflows,
+add `--template skill`. It writes `skill.md` and `skill.json`, turning the video
+into a draft agent capability with triggers, inputs, steps, validation and
+limitations.
 
 ## Quick Start
 

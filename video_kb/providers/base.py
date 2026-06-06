@@ -42,10 +42,16 @@ class SynthesisContext:
         metadata: SourceMetadata,
         transcript_text: str,
         frames: list[FrameObservation],
+        media_kind: str | None = None,
     ) -> None:
         self.metadata = metadata
         self.transcript_text = transcript_text
         self.frames = frames
+        self.media_kind = media_kind or metadata.media_kind
+
+    @property
+    def is_carousel(self) -> bool:
+        return self.media_kind == "carousel" and len(self.frames) > 1
 
 
 class AIProvider(ABC):
@@ -185,6 +191,7 @@ def metadata_dict(metadata: SourceMetadata) -> dict[str, Any]:
         "description": metadata.description,
         "tags": metadata.tags,
         "categories": metadata.categories,
+        "media_kind": metadata.media_kind,
     }
 
 

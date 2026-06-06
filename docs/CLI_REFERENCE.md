@@ -7,12 +7,14 @@
 | `transcreveai analyze SOURCE` | Analisa um link ou arquivo de video |
 | `transcreveai sources probe SOURCE` | Inspeciona o tipo da fonte |
 | `transcreveai agent run SOURCE` | Executa o workflow de agente: probe, analyze e opcionalmente index/ask |
+| `transcreveai agent batch SOURCES_FILE` | Executa o workflow de agente para uma lista `.txt`, `.csv` ou `.json` |
 | `transcreveai index [RUN_ID\|--all]` | Indexa runs para busca semantica (RAG) |
 | `transcreveai ask PERGUNTA` | Faz uma pergunta sobre os videos indexados |
 | `transcreveai serve` | Inicia o servidor web com API e SPA |
 | `transcreveai runs list` | Lista o historico de runs |
 | `transcreveai runs show RUN_ID` | Exibe detalhes de um run |
 | `transcreveai runs rm RUN_ID` | Remove um run do indice |
+| `transcreveai-mcp` | Inicia o servidor MCP opcional para agentes |
 
 ---
 
@@ -49,6 +51,22 @@ transcreveai agent run "https://youtu.be/..." --index --provider local
 transcreveai agent run "https://youtu.be/..." \
   --question "quais ferramentas, passos e riscos aparecem no video?" \
   --top-k 8
+
+# Pacote Creator Remix / Content Intelligence
+transcreveai agent run "https://www.instagram.com/reel/..." \
+  --template content \
+  --json
+
+# Pacote de skill/workflow reutilizavel
+transcreveai agent run "https://www.instagram.com/reel/..." \
+  --template skill \
+  --json
+
+# Gerar os dois pacotes no mesmo run
+transcreveai agent run "https://www.instagram.com/reel/..." \
+  --template content \
+  --template skill \
+  --json
 ```
 
 ### Opcoes principais
@@ -63,9 +81,132 @@ transcreveai agent run "https://youtu.be/..." \
 | `--ai {auto,off,full}` | Modo de IA repassado ao pipeline | `auto` |
 | `--provider NOME` | Provider de IA/embedding | `openai` |
 | `--cookies-browser BROWSER` | Browser para cookies do yt-dlp | - |
+| `--template {content,skill}` | Gera artefatos extras. `content` escreve `content.md`, `content.json` e `content.csv`; `skill` escreve `skill.md` e `skill.json`. Pode ser usado mais de uma vez. | - |
 | `--force` | Reprocessa mesmo que a origem ja exista no indice | `false` |
 
 Se o probe retornar `unknown`, o comando imprime o resultado e encerra com codigo `1`.
+
+---
+
+## `transcreveai agent batch`
+
+Executa `agent run` para uma lista salva de origens. O arquivo pode ser:
+
+- `.txt`: uma origem por linha; linhas vazias e comentarios com `#` sao ignorados.
+- `.csv`: usa a coluna `source`, `url` ou `link`; se nao houver header reconhecido, usa a primeira coluna.
+- `.json`: aceita lista de strings, lista de objetos com `source`/`url`/`link`, ou objeto com `sources`/`urls`.
+
+```bash
+transcreveai agent batch SOURCES_FILE [opcoes]
+```
+
+### Exemplos
+
+```bash
+# Processar lista e gerar resumo batch
+transcreveai agent batch ./sources.txt --ai auto --language pt --json
+
+# Gerar Creator Remix e skill draft para cada item
+transcreveai agent batch ./sources.csv \
+  --template content \
+  --template skill \
+  --json
+
+# Smoke test isolado, sem custo de IA
+transcreveai --index-db /tmp/transcreveai-batch.db agent batch ./sources.json \
+  --out /tmp/transcreveai-batch \
+  --provider local \
+  --ai off \
+  --force \
+  --limit 3 \
+  --json
+```
+
+### Opcoes principais
+
+| Flag | Descricao | Default |
+|---|---|---|
+| `--json` | Emite resumo estruturado do batch | `false` |
+| `--out PATH` | Diretorio de saida do batch | `outputs-batch` |
+| `--limit N` | Limita a quantidade de origens processadas (`0` = sem limite) | `0` |
+| `--fail-fast` | Para no primeiro erro inesperado | `false` |
+| `--frame-interval N` | Intervalo entre frames por run | `5.0` |
+| `--max-frames N` | Maximo de frames locais por run (`0` = sem limite) | `80` |
+| `--visual-limit N` | Maximo de frames enviados para visao por IA em cada run | `30` |
+| `--template {content,skill}` | Gera os mesmos templates do `agent run` para cada run | - |
+| `--index` | Indexa cada run apos a analise | `false` |
+| `--question TEXT` | Faz a mesma pergunta para cada run; implica indexacao | - |
+| `--provider NOME` | Provider de IA/embedding | `openai` |
+| `--ai {auto,off,full}` | Modo de IA repassado a cada run | `auto` |
+| `--vision-model MODEL` | Modelo de visao/sintese repassado a cada run | - |
+| `--transcribe-model MODEL` | Modelo de transcricao repassado a cada run | - |
+| `--language LANG` | Idioma do audio, ex: `pt`, `en` | - |
+| `--tesseract-lang LANG` | String de idioma OCR | `por+eng` |
+| `--cookies-browser BROWSER` | Browser para cookies do yt-dlp | - |
+| `--cookies FILE` | Arquivo `cookies.txt` para yt-dlp | - |
+| `--storage NOME` | Backend de armazenamento | `filesystem` |
+| `--force` | Reprocessa origens ja conhecidas | `false` |
+
+O comando grava `batch.json` e `batch.md` no diretorio de saida. Cada item do
+resumo inclui `ok`, `run_id`, `analysis_path`, `markdown_path` e, quando houver
+templates, `template_paths` com os caminhos gerados.
+
+---
+
+## `transcreveai-mcp`
+
+Inicia a superficie MCP opcional do TranscreveAI. Instale o extra antes:
+
+```bash
+pip install 'transcreve-ai[mcp,rag]'
+transcreveai-mcp
+```
+
+Por padrao, o transporte e `stdio`, adequado para clientes MCP locais. Para um endpoint HTTP:
+
+```bash
+transcreveai-mcp --transport streamable-http --host 127.0.0.1 --port 8765
+```
+
+Registro generico em clientes MCP:
+
+```json
+{
+  "mcpServers": {
+    "transcreveai": {
+      "command": "transcreveai-mcp",
+      "args": ["--transport", "stdio"]
+    }
+  }
+}
+```
+
+Valide a instalacao com `transcreveai-mcp --help`. Use `[mcp,rag]` quando o
+cliente tambem for chamar `index`/`ask`; para apenas `sources_probe`, `analyze`,
+`agent_run` e `agent_batch`, `[mcp]` basta.
+
+Tools expostas:
+
+| Tool | Descricao |
+|---|---|
+| `sources_probe` | Classifica uma URL/caminho antes de baixar |
+| `analyze` | Roda a analise e retorna paths dos artefatos |
+| `agent_run` | Executa probe, analise, indexacao opcional e pergunta opcional |
+| `agent_batch` | Executa `agent_run` em uma lista `.txt`, `.csv` ou `.json` |
+| `index` | Indexa um run ou todos os runs para RAG |
+| `ask` | Consulta runs indexados, com `search_only` quando necessario |
+| `runs_list` | Lista runs do indice SQLite |
+| `runs_show` | Retorna detalhes de um run especifico |
+
+As tools capturam stdout/stderr do pipeline e devolvem esses logs no campo
+`logs`, para preservar o protocolo MCP quando o transporte e `stdio`.
+As tools `analyze`, `agent_run` e `agent_batch` aceitam
+`templates: ["content", "skill"]`. `content` gera `content.md`,
+`content.json` e `content.csv`; `skill` gera `skill.md` e `skill.json`.
+`agent_batch` tambem aceita `frame_interval`, `max_frames`, `visual_limit`,
+`vision_model`, `transcribe_model`, `tesseract_lang`, `video_format`,
+`provider`, `ai`, `language`, `cookies_browser`, `cookies`, `storage`, `limit`
+e `fail_fast` para controlar cada run da lista.
 
 ---
 
@@ -99,6 +240,7 @@ transcreveai analyze SOURCE [opcoes]
 | `--format SELECTOR` | Seletor de formato yt-dlp | `bv*+ba/b` |
 | `--provider NOME` | Provider de IA: `openai`, `local`, `gemini`, `anthropic` ou externo via entry_points. Sobreescreve `VIDEO_KB_PROVIDER`. | `openai` |
 | `--storage NOME` | Backend de armazenamento: `filesystem`, `obsidian`, `notion`, `supabase`, `s3`. Sobreescreve `VIDEO_KB_STORAGE`. | `filesystem` |
+| `--template {content,skill}` | Gera artefatos extras: `content.md`/`content.json`/`content.csv` e/ou `skill.md`/`skill.json` | - |
 | `--force` | Ignora dedupe: reprocessa mesmo que o `source_hash` ja exista no indice | `false` |
 
 ### Comportamento de dedupe

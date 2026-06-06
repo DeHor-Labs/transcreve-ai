@@ -75,6 +75,57 @@ class ReportTests(unittest.TestCase):
         self.assertIn("![frame](frames/frame.jpg)", markdown)
         self.assertIn("Frame capturado", markdown)
 
+    def test_render_markdown_adapts_to_carousel(self):
+        result = AnalysisResult(
+            run_id="run-carousel",
+            created_at="2026-06-01T00:00:00Z",
+            source="https://www.instagram.com/p/example/",
+            workdir="/tmp/run",
+            media_path="source_01.jpg",
+            media_paths=["source_01.jpg", "source_02.jpg"],
+            audio_path="",
+            metadata=SourceMetadata(
+                source="https://www.tiktok.com/@creator/photo/example",
+                title="Carousel Demo",
+                extractor="tiktok",
+                media_kind="carousel",
+                channel="creator",
+                upload_date="1779806341",
+            ),
+            frames=[
+                FrameObservation(
+                    timestamp=0,
+                    image_path="frames/slide-1.jpg",
+                    ocr_text="hook do slide",
+                    visual_note="capa do carrossel",
+                ),
+                FrameObservation(
+                    timestamp=1,
+                    image_path="frames/slide-2.jpg",
+                    ocr_text="passo dois",
+                ),
+            ],
+            synthesis=KnowledgeSynthesis(
+                summary="Resumo do carrossel",
+                chapters=[{"start": 1, "title": "Capa", "notes": "Promessa principal"}],
+            ),
+        )
+
+        markdown = render_markdown(result)
+
+        self.assertIn("- Tipo: carrossel", markdown)
+        self.assertIn("- Slides: 2", markdown)
+        self.assertIn("## Slides / estrutura", markdown)
+        self.assertIn("Slide 1 - Capa: Promessa principal", markdown)
+        self.assertIn("## Slides do carrossel", markdown)
+        self.assertIn("### Slide 1/2", markdown)
+        self.assertIn("![slide 1](frames/slide-1.jpg)", markdown)
+        self.assertIn("## Textos detectados nos slides", markdown)
+        self.assertIn("[Slide 2] passo dois", markdown)
+        self.assertIn("- Midias do carrossel: `source_01.jpg`, `source_02.jpg`", markdown)
+        self.assertNotIn("## Linha do tempo multimodal", markdown)
+        self.assertNotIn("- Video:", markdown)
+
     def test_normalize_items_formats_structured_ai_lists(self):
         items = normalize_items(
             [
