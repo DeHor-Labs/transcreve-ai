@@ -20,8 +20,31 @@ Para agentes, o caminho curto e:
 ```bash
 transcreveai agent run "URL_DO_VIDEO" \
   --question "quais ferramentas, passos e riscos aparecem no video?" \
+  --template content \
+  --template skill \
   --json
 ```
+
+Com `--template content`, o resultado tambem inclui `template_paths` para
+`content.md`, `content.json` e `content.csv`, com evidencias do video, hooks,
+angulos, roteiro curto, variacoes por plataforma, campos Notion/CSV e
+oportunidades de automacao.
+
+Com `--template skill`, o resultado inclui `skill.md` e `skill.json`, um draft
+de capacidade reutilizavel para agentes: gatilhos, entradas, passos,
+validacao, limites e entregaveis.
+
+Para muitos links salvos, use o batch:
+
+```bash
+transcreveai agent batch ./sources.txt \
+  --template content \
+  --template skill \
+  --json
+```
+
+O batch aceita `.txt`, `.csv` e `.json`, grava `batch.md`/`batch.json` e inclui
+os `template_paths` de cada run.
 
 Para demos repetiveis, smoke tests ou uso por agentes em paralelo, isole o indice
 SQLite. Assim o mesmo video pode ser testado de novo sem colidir com runs antigos:
@@ -32,6 +55,8 @@ transcreveai --index-db /tmp/transcreveai-demo.db agent run ./demo.mp4 \
   --ai off \
   --provider local \
   --force \
+  --template content \
+  --template skill \
   --json
 ```
 

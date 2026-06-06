@@ -13,19 +13,9 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths-ignore:
-      - "README.md"
-      - "docs/**"
-      - "skills/**"
-      - ".coderabbit.yaml"
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, labeled]
-    paths-ignore:
-      - "README.md"
-      - "docs/**"
-      - "skills/**"
-      - ".coderabbit.yaml"
 
 jobs:
   changes:
@@ -34,6 +24,7 @@ jobs:
     outputs:
       python: ${{ steps.filter.outputs.python }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      github: ${{ steps.filter.outputs.github }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
@@ -51,6 +42,8 @@ jobs:
             frontend:
               - ".github/workflows/ci.yml"
               - "frontend/**"
+            github:
+              - ".github/**"
 
   quality:
     name: Quality
@@ -58,6 +51,7 @@ jobs:
     if: >
       github.event_name == 'workflow_dispatch' ||
       needs.changes.outputs.python == 'true' ||
+      needs.changes.outputs.github == 'true' ||
       (github.event_name == 'pull_request' &&
        contains(github.event.pull_request.labels.*.name, 'coverage'))
     runs-on: ubuntu-latest
@@ -86,6 +80,7 @@ jobs:
     if: >
       github.event_name == 'workflow_dispatch' ||
       needs.changes.outputs.python == 'true' ||
+      needs.changes.outputs.github == 'true' ||
       (github.event_name == 'pull_request' &&
        contains(github.event.pull_request.labels.*.name, 'coverage'))
     runs-on: ubuntu-latest
@@ -120,6 +115,7 @@ jobs:
       needs.python-tests.result == 'success' &&
       (github.event_name == 'workflow_dispatch' ||
        github.ref == 'refs/heads/main' ||
+       needs.changes.outputs.github == 'true' ||
        (github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'coverage')))
     runs-on: ubuntu-latest
@@ -150,7 +146,10 @@ jobs:
     name: Frontend
     runs-on: ubuntu-latest
     needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend == 'true'
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      needs.changes.outputs.frontend == 'true' ||
+      needs.changes.outputs.github == 'true'
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
@@ -173,3 +172,121 @@ jobs:
       - name: Frontend build
         working-directory: frontend
         run: pnpm build
+
+  ci-gate:
+    name: CI Gate
+    needs:
+      - changes
+      - quality
+      - python-tests
+      - coverage
+      - frontend
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Enforce required check completion
+        env:
+          CHANGED_PYTHON: ${{ needs.changes.outputs.python }}
+          CHANGED_FRONTEND: ${{ needs.changes.outputs.frontend }}
+          CHANGED_GITHUB: ${{ needs.changes.outputs.github }}
+          COVERAGE_LABEL: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'coverage') }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          PYTESTS_RESULT: ${{ needs.python-tests.result }}
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+        run: |
+          set -euo pipefail
+
+          quality_required=false
+          python_tests_required=false
+          coverage_required=false
+          frontend_required=false
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            quality_required=true
+            python_tests_required=true
+            coverage_required=true
+            frontend_required=true
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            if [[ "$CHANGED_PYTHON" == "true" || "$CHANGED_GITHUB" == "true" ]]; then
+              quality_required=true
+              python_tests_required=true
+            fi
+            if [[ "$CHANGED_FRONTEND" == "true" || "$CHANGED_GITHUB" == "true" ]]; then
+              frontend_required=true
+            fi
+            if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+              coverage_required=true
+            fi
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            if [[ "$CHANGED_PYTHON" == "true" || "$CHANGED_GITHUB" == "true" ]]; then
+              quality_required=true
+              python_tests_required=true
+            fi
+            if [[ "$CHANGED_GITHUB" == "true" ]]; then
+              coverage_required=true
+            fi
+            if [[ "$CHANGED_FRONTEND" == "true" || "$CHANGED_GITHUB" == "true" ]]; then
+              frontend_required=true
+            fi
+            if [[ "$COVERAGE_LABEL" == "true" ]]; then
+              quality_required=true
+              python_tests_required=true
+              coverage_required=true
+            fi
+          fi
+
+          if [[ "$coverage_required" == "true" && "$PYTESTS_RESULT" != "success" ]]; then
+            coverage_required=false
+          fi
+
+          if [[ "$CHANGED_GITHUB" == "true" ]]; then
+            echo "Scoped change detected in .github/**; enforcing full safety checks."
+          fi
+
+          failure=0
+
+          require_success() {
+            local name="$1"
+            local required="$2"
+            local result="$3"
+            if [[ "$required" == "true" && "$result" != "success" ]]; then
+              echo "Required check failed: $name => $result"
+              failure=1
+            fi
+          }
+
+          require_success "quality" "$quality_required" "$QUALITY_RESULT"
+          require_success "python-tests" "$python_tests_required" "$PYTESTS_RESULT"
+          require_success "frontend" "$frontend_required" "$FRONTEND_RESULT"
+          require_success "coverage" "$coverage_required" "$COVERAGE_RESULT"
+          require_success "changes" "true" "$CHANGES_RESULT"
+
+          if [[ "$quality_required" == "true" ]]; then
+            echo "quality: required"
+          else
+            echo "quality: optional"
+          fi
+          if [[ "$python_tests_required" == "true" ]]; then
+            echo "python-tests: required"
+          else
+            echo "python-tests: optional"
+          fi
+          if [[ "$frontend_required" == "true" ]]; then
+            echo "frontend: required"
+          else
+            echo "frontend: optional"
+          fi
+          if [[ "$coverage_required" == "true" ]]; then
+            echo "coverage: required"
+          else
+            echo "coverage: optional"
+          fi
+
+          if [[ "$failure" != 0 ]]; then
+            echo "CI Gate FAILED."
+            exit 1
+          fi
+
+          echo "CI Gate PASSED."

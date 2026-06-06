@@ -18,9 +18,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from video_kb.models import SourceMetadata
+from video_kb.models import FrameObservation, SourceMetadata
 from video_kb.providers.anthropic_provider import AnthropicProvider
-from video_kb.providers.base import AUDIO_CHUNK_LIMIT_BYTES, CapabilityNotSupported
+from video_kb.providers.base import (
+    AUDIO_CHUNK_LIMIT_BYTES,
+    CapabilityNotSupported,
+    SynthesisContext,
+)
 from video_kb.providers.gemini_provider import GeminiProvider
 from video_kb.providers.local_provider import LocalProvider
 from video_kb.providers.openai_provider import OpenAIProvider
@@ -157,6 +161,43 @@ class OpenAICapabilities(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     _image_data_url(path)
 
+    def test_describe_frame_usa_media_kind_carousel_sem_depender_de_instagram(self) -> None:
+        metadata = SourceMetadata(
+            source="https://www.tiktok.com/@creator/photo/123",
+            title="TikTok carousel",
+            extractor="tiktok",
+            media_kind="carousel",
+        )
+        with patch.object(self.provider, "_vision_text", return_value="ok") as vision_text:
+            result = self.provider._describe_frame(
+                Path("/tmp/slide.jpg"),
+                metadata,
+                timestamp=0,
+                ocr_text="texto",
+                transcript_context="",
+            )
+
+        self.assertEqual(result, "ok")
+        prompt = vision_text.call_args.args[0]
+        self.assertIn("slide de carrossel", prompt)
+        self.assertIn("Slide: 1", prompt)
+        self.assertNotIn("frame de video", prompt)
+
+
+class SynthesisContextTests(unittest.TestCase):
+    def test_is_carousel_usa_media_kind_generico(self) -> None:
+        ctx = SynthesisContext(
+            metadata=SourceMetadata(source="https://example.com", extractor="tiktok"),
+            transcript_text="",
+            frames=[
+                FrameObservation(timestamp=0, image_path="f1.jpg"),
+                FrameObservation(timestamp=1, image_path="f2.jpg"),
+            ],
+            media_kind="carousel",
+        )
+
+        self.assertTrue(ctx.is_carousel)
+
 
 # ---------------------------------------------------------------------------
 # Local
@@ -196,6 +237,21 @@ class LocalCapabilities(unittest.TestCase):
                 transcript_context="",
             )
         self.assertIn("LocalProvider", str(ctx.exception))
+
+    def test_complete_publico_retorna_resposta_extrativa(self) -> None:
+        prompt = (
+            "Pergunta: qual a tese?\n\n"
+            "Trechos:\n"
+            '[1] "A tese central do video e usar IA como servico." - Video X (resumo)\n'
+            '[2] "O software sozinho nao e a categoria onde esta o dinheiro." '
+            "- Video X (capitulo)\n"
+        )
+
+        result = self.provider.complete(prompt)
+
+        self.assertIn("Resposta local baseada", result)
+        self.assertIn("IA como servico", result)
+        self.assertIn("Video X", result)
 
     def test_embed_usa_sentence_transformers(self) -> None:
         mock_model = MagicMock()
@@ -428,10 +484,12 @@ class CapabilityRequireGuard(unittest.TestCase):
         with self.assertRaises(CapabilityNotSupported):
             provider.embed(["x"])
 
-    def test_local_complete_sem_implementacao_levanta_via_metodo_publico(self) -> None:
+    def test_local_complete_publico_nao_levanta(self) -> None:
         provider = LocalProvider()
-        with self.assertRaises(CapabilityNotSupported):
-            provider.complete("pergunta")
+        result = provider.complete(
+            'Trechos:\n[1] "Conteudo recuperado." - Video Local (resumo)'
+        )
+        self.assertIn("Conteudo recuperado", result)
 
     def test_local_sem_vision_levanta_via_metodo_publico(self) -> None:
         provider = LocalProvider()

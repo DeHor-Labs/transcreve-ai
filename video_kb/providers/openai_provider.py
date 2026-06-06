@@ -125,16 +125,26 @@ class OpenAIProvider(AIProvider):
         ocr_text: str,
         transcript_context: str,
     ) -> str:
+        is_carousel = metadata.media_kind == "carousel"
+        unit = "slide de carrossel" if is_carousel else "frame de video"
+        position = (
+            _slide_label(timestamp) if is_carousel else f"Timestamp: {format_timestamp(timestamp)}"
+        )
+        speech_label = (
+            "Trecho de fala associado ao slide"
+            if is_carousel
+            else "Trecho de fala perto do frame"
+        )
         prompt = (
-            "Voce esta analisando um frame de video para uma base de conhecimento. "
+            f"Voce esta analisando um {unit} para uma base de conhecimento. "
             "Responda em portugues, de forma compacta, em ate 8 bullets curtos. "
             "Inclua apenas detalhes uteis para busca futura: pessoas, tela, codigo, "
             "produto, interfaces, gestos, textos visiveis, contexto e acoes demonstradas. "
             "Nao use cabecalhos longos.\n\n"
             f"Titulo: {metadata.title or metadata.source}\n"
-            f"Timestamp: {format_timestamp(timestamp)}\n"
+            f"{position}\n"
             f"OCR local: {compact_text(ocr_text, 1200)}\n"
-            f"Trecho de fala perto do frame: {compact_text(transcript_context, 1600)}"
+            f"{speech_label}: {compact_text(transcript_context, 1600)}"
         )
         return self._vision_text(prompt, image_path)
 
@@ -163,22 +173,31 @@ class OpenAIProvider(AIProvider):
     # synthesize
     # ------------------------------------------------------------------
     def _synthesize(self, ctx: SynthesisContext) -> KnowledgeSynthesis:
+        is_carousel = ctx.is_carousel
         frame_notes = "\n".join(
-            f"[{format_timestamp(frame.timestamp)}] OCR: {compact_text(frame.ocr_text, 600)}\n"
+            f"[{_slide_label_at(index, frame.timestamp, is_carousel)}] "
+            f"OCR: {compact_text(frame.ocr_text, 600)}\n"
             f"Visual: {compact_text(frame.visual_note, 900)}"
-            for frame in ctx.frames
+            for index, frame in enumerate(ctx.frames, start=1)
             if frame.ocr_text or frame.visual_note
+        )
+        structure_instruction = (
+            "A origem e um carrossel de imagens. Em chapters, represente a ordem dos slides; "
+            "use start como numero do slide (1, 2, 3...) e nao como timestamp. "
+            "No summary, descreva o carrossel como sequencia/argumento visual, nao como video.\n\n"
+            if is_carousel
+            else "chapters deve ser uma lista de objetos com start, title e notes.\n\n"
         )
         prompt = (
             "Transforme a analise multimodal abaixo em JSON para base de conhecimento. "
             "Responda apenas JSON valido com as chaves: summary, chapters, entities, "
             "tools_or_products, claims, action_items, questions. "
-            "chapters deve ser uma lista de objetos com start, title e notes.\n\n"
-            "Metadados:\n"
+            + structure_instruction
+            + "Metadados:\n"
             + json.dumps(metadata_dict(ctx.metadata), ensure_ascii=False, indent=2)
             + "\n\nTranscricao:\n"
             + compact_text(ctx.transcript_text, 20000)
-            + "\n\nFrames/OCR/visual:\n"
+            + ("\n\nSlides/OCR/visual:\n" if is_carousel else "\n\nFrames/OCR/visual:\n")
             + compact_text(frame_notes, 20000)
         )
         text = self._text(prompt)
@@ -258,3 +277,13 @@ def _safe_chunk_duration(chunk: Path, *, fallback: float, probe: Any) -> float:
     except Exception:  # noqa: BLE001
         return fallback
     return duration if duration > 0 else fallback
+
+
+def _slide_label(timestamp: float) -> str:
+    return f"Slide: {max(1, int(timestamp) + 1)}"
+
+
+def _slide_label_at(index: int, timestamp: float, is_carousel: bool) -> str:
+    if is_carousel:
+        return f"Slide {index}"
+    return format_timestamp(timestamp)

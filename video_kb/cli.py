@@ -105,6 +105,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     agent_run.add_argument("--storage", default="", metavar="NOME", help="Backend de armazenamento")
     agent_run.add_argument(
+        "--template",
+        choices=["content", "skill"],
+        action="append",
+        default=[],
+        help="Gera artefato adicional: content ou skill.",
+    )
+    agent_run.add_argument(
         "--force",
         action="store_true",
         default=False,
@@ -126,6 +133,77 @@ def build_parser() -> argparse.ArgumentParser:
     agent_run.add_argument("--question", default=None, help="Pergunta a responder apos indexar")
     agent_run.add_argument("--top-k", type=int, default=5, help="Numero de trechos para RAG")
     agent_run.add_argument("--json", dest="as_json", action="store_true", help="Saida JSON")
+
+    agent_batch = agent_sub.add_parser(
+        "batch",
+        help="Executa o workflow de agente para uma lista txt/csv/json de origens.",
+    )
+    agent_batch.add_argument("sources_file", help="Arquivo .txt, .csv ou .json com URLs/origens")
+    agent_batch.add_argument("--out", default="outputs-batch", help="Diretorio de saida")
+    agent_batch.add_argument(
+        "--frame-interval",
+        type=float,
+        default=5.0,
+        help="Intervalo entre frames em segundos",
+    )
+    agent_batch.add_argument(
+        "--max-frames",
+        type=int,
+        default=80,
+        help="Maximo de frames locais por run (0 = sem limite)",
+    )
+    agent_batch.add_argument(
+        "--visual-limit",
+        type=int,
+        default=30,
+        help="Maximo de frames enviados para visao por IA em cada run",
+    )
+    agent_batch.add_argument("--provider", default="", metavar="NOME", help="Provider de IA")
+    agent_batch.add_argument(
+        "--ai",
+        choices=["auto", "off", "full"],
+        default="auto",
+        help="Modo de IA repassado para cada run",
+    )
+    agent_batch.add_argument("--vision-model", default="", help="Modelo de visao/sintese")
+    agent_batch.add_argument("--transcribe-model", default="", help="Modelo de transcricao")
+    agent_batch.add_argument("--language", default=None, help="Idioma do audio, ex: pt, en")
+    agent_batch.add_argument("--tesseract-lang", default="por+eng", help="Idioma OCR desejado")
+    agent_batch.add_argument("--cookies-browser", default=None, help="Browser para cookies")
+    agent_batch.add_argument("--cookies", default=None, help="Arquivo cookies.txt")
+    agent_batch.add_argument("--format", default="bv*+ba/b", help="Formato yt-dlp")
+    agent_batch.add_argument(
+        "--storage",
+        default="",
+        metavar="NOME",
+        help="Backend de armazenamento",
+    )
+    agent_batch.add_argument(
+        "--template",
+        choices=["content", "skill"],
+        action="append",
+        default=[],
+        help="Gera artefatos adicionais para cada run.",
+    )
+    agent_batch.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Forca reprocessar",
+    )
+    agent_batch.add_argument(
+        "--index",
+        dest="should_index",
+        action="store_true",
+        default=False,
+        help="Indexa cada run apos analise",
+    )
+    agent_batch.add_argument("--index-force", action="store_true", default=False)
+    agent_batch.add_argument("--question", default=None, help="Pergunta para cada run")
+    agent_batch.add_argument("--top-k", type=int, default=5)
+    agent_batch.add_argument("--limit", type=int, default=0, help="Limita numero de origens")
+    agent_batch.add_argument("--fail-fast", action="store_true", default=False)
+    agent_batch.add_argument("--json", dest="as_json", action="store_true", help="Saida JSON")
 
     # ------------------------------------------------------------------
     # analyze
@@ -181,6 +259,13 @@ def build_parser() -> argparse.ArgumentParser:
             "Backend de armazenamento: filesystem (padrao), obsidian, notion, supabase, s3. "
             "Sobreescreve VIDEO_KB_STORAGE."
         ),
+    )
+    analyze.add_argument(
+        "--template",
+        choices=["content", "skill"],
+        action="append",
+        default=[],
+        help="Gera artefato adicional: content ou skill.",
     )
 
     # ------------------------------------------------------------------
@@ -371,7 +456,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    load_dotenv(Path.cwd() / ".env")
+    _load_cli_dotenvs()
     parser = build_parser()
     args = parser.parse_args()
 
@@ -398,11 +483,69 @@ def main() -> None:
     elif args.command == "agent":
         if args.agent_command == "run":
             _cmd_agent_run(args)
+        elif args.agent_command == "batch":
+            _cmd_agent_batch(args)
 
 
 # ---------------------------------------------------------------------------
 # Implementacoes dos comandos
 # ---------------------------------------------------------------------------
+
+
+def _load_cli_dotenvs() -> None:
+    """Load local env files without overriding an already-exported shell env.
+
+    Agent/skill calls often invoke the editable CLI from a task workspace instead
+    of the repository root. Loading both locations keeps provider selection
+    deterministic while preserving normal shell precedence.
+    """
+    candidates = [
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parents[1] / ".env",
+    ]
+    seen: set[Path] = set()
+    for path in candidates:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            resolved = path
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        load_dotenv(path)
+
+
+def _normalize_templates(raw_templates: list[str] | None) -> tuple[str, ...]:
+    seen: set[str] = set()
+    templates: list[str] = []
+    for template in raw_templates or []:
+        name = template.strip().lower()
+        if name and name not in seen:
+            seen.add(name)
+            templates.append(name)
+    return tuple(templates)
+
+
+def _template_output_paths(workdir: Path, templates: tuple[str, ...]) -> dict[str, Path]:
+    paths: dict[str, Path] = {}
+    if "content" in templates:
+        content_md = workdir / "content.md"
+        content_json = workdir / "content.json"
+        content_csv = workdir / "content.csv"
+        if content_md.exists():
+            paths["content"] = content_md
+        if content_json.exists():
+            paths["content_json"] = content_json
+        if content_csv.exists():
+            paths["content_csv"] = content_csv
+    if "skill" in templates:
+        skill_md = workdir / "skill.md"
+        skill_json = workdir / "skill.json"
+        if skill_md.exists():
+            paths["skill"] = skill_md
+        if skill_json.exists():
+            paths["skill_json"] = skill_json
+    return paths
 
 
 def _source_probe_message(probe: SourceProbe) -> str:
@@ -454,7 +597,12 @@ def _cmd_agent_run(args: argparse.Namespace) -> None:
     import contextlib
     import io
 
-    from .agent_workflow import AgentWorkflowOptions, dumps_agent_result, run_agent_workflow
+    from .agent_workflow import (
+        AgentWorkflowOptions,
+        artifact_reference_available,
+        dumps_agent_result,
+        run_agent_workflow,
+    )
 
     options = AgentWorkflowOptions(
         out_dir=Path(args.out),
@@ -477,13 +625,14 @@ def _cmd_agent_run(args: argparse.Namespace) -> None:
         question=args.question,
         top_k=args.top_k,
         index_force=args.index_force,
+        templates=_normalize_templates(args.template),
     )
     if args.as_json:
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             result = run_agent_workflow(args.source, options)
     else:
         result = run_agent_workflow(args.source, options)
-    has_artifact = bool(result.analysis_path and Path(result.analysis_path).exists())
+    has_artifact = artifact_reference_available(result.analysis_path)
     question_failed = bool(args.question and not result.answer)
 
     if args.as_json:
@@ -502,6 +651,8 @@ def _cmd_agent_run(args: argparse.Namespace) -> None:
         print(f"Diretorio: {result.workdir}")
         print(f"Markdown: {result.markdown_path}")
         print(f"JSON: {result.analysis_path}")
+        for name, path in result.template_paths.items():
+            print(f"Template {name}: {path}")
     if result.reused_existing:
         print("Reuso: run existente reutilizado.")
     if result.indexed:
@@ -522,6 +673,92 @@ def _cmd_agent_run(args: argparse.Namespace) -> None:
             print(f" - {warning}")
     if not result.run_id or not has_artifact or question_failed:
         sys.exit(1)
+
+
+def _cmd_agent_batch(args: argparse.Namespace) -> None:
+    import contextlib
+    import io
+
+    from .agent_workflow import AgentWorkflowOptions
+    from .batch import run_agent_batch
+
+    options = AgentWorkflowOptions(
+        out_dir=Path(args.out),
+        frame_interval=args.frame_interval,
+        max_frames=args.max_frames,
+        visual_limit=args.visual_limit,
+        ai_mode=args.ai,
+        vision_model=args.vision_model,
+        transcribe_model=args.transcribe_model,
+        language=args.language,
+        tesseract_lang=args.tesseract_lang,
+        cookies_browser=args.cookies_browser,
+        cookies=args.cookies,
+        video_format=args.format,
+        provider_name=args.provider,
+        storage_backend=args.storage,
+        force=args.force,
+        index_db=getattr(args, "index_db", None),
+        should_index=args.should_index,
+        question=args.question,
+        top_k=args.top_k,
+        index_force=args.index_force,
+        templates=_normalize_templates(args.template),
+    )
+
+    try:
+        if args.as_json:
+            with (
+                contextlib.redirect_stdout(io.StringIO()),
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                summary = run_agent_batch(
+                    Path(args.sources_file),
+                    options,
+                    limit=args.limit,
+                    fail_fast=args.fail_fast,
+                )
+            print(json.dumps(summary, ensure_ascii=False, indent=2))
+        else:
+            summary = run_agent_batch(
+                Path(args.sources_file),
+                options,
+                limit=args.limit,
+                fail_fast=args.fail_fast,
+            )
+    except Exception as exc:  # noqa: BLE001
+        summary = _batch_error_summary(Path(args.sources_file), exc)
+        if args.as_json:
+            print(json.dumps(summary, ensure_ascii=False, indent=2))
+        else:
+            print(f"Erro: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if not args.as_json:
+        print(f"OK: {args.out}")
+        print(f"Total: {summary['total']}")
+        print(f"Sucesso: {summary['ok']}")
+        print(f"Falhas: {summary['failed']}")
+        print(f"Resumo: {Path(args.out) / 'batch.md'}")
+        print(f"JSON: {Path(args.out) / 'batch.json'}")
+
+    if summary["failed"] and args.fail_fast:
+        sys.exit(1)
+
+
+def _batch_error_summary(sources_file: Path, exc: Exception) -> dict[str, object]:
+    return {
+        "source_file": str(sources_file),
+        "total": 0,
+        "ok": 0,
+        "failed": 1,
+        "items": [],
+        "error": {
+            "code": "agent_batch_failed",
+            "message": str(exc),
+        },
+        "warnings": ["Falha ao carregar ou executar o batch."],
+    }
 
 
 def _cmd_eval(args: argparse.Namespace) -> None:
@@ -631,6 +868,7 @@ def _cmd_analyze(args: argparse.Namespace) -> None:
         force=args.force,
         storage_backend=storage_name,
         index_db=getattr(args, "index_db", None),
+        templates=_normalize_templates(args.template),
     )
 
     try:
@@ -646,6 +884,12 @@ def _cmd_analyze(args: argparse.Namespace) -> None:
     print(f"OK: {result.workdir}")
     print("Markdown: %s" % (Path(result.workdir) / "knowledge.md"))
     print("JSON: %s" % (Path(result.workdir) / "analysis.json"))
+    template_paths = _template_output_paths(
+        Path(result.workdir),
+        _normalize_templates(args.template),
+    )
+    for name, path in template_paths.items():
+        print(f"Template {name}: {path}")
 
 
 def _cmd_runs_list(args: argparse.Namespace) -> None:

@@ -1,0 +1,324 @@
+name: Dependabot Auto Merge
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  evaluate-and-merge:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Evaluate Dependabot PR for safe auto-merge
+        id: evaluate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "# Dependabot Auto-Merge Decision"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          workflow_event="$(jq -r '.workflow_run.event // empty' "$GITHUB_EVENT_PATH")"
+          if [[ "$workflow_event" != "pull_request" ]]; then
+            echo "workflow_run.event=$workflow_event (not pull_request)." >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "eligible=false"
+              echo "pr_number=0"
+              echo "reason=workflow_run_event_not_pull_request"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          workflow_head_sha="$(jq -r '.workflow_run.head_sha // empty' "$GITHUB_EVENT_PATH")"
+
+          pr_number="$(jq -r '.workflow_run.pull_requests[0].number // empty' "$GITHUB_EVENT_PATH")"
+          if [[ -z "$pr_number" || "$pr_number" == "null" ]]; then
+            echo "No PR associated with this workflow_run." >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "eligible=false"
+              echo "pr_number=0"
+              echo "reason=no_associated_pr"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          pr_json="$(gh api "repos/$GH_REPO/pulls/$pr_number")"
+          pr_author="$(jq -r '.user.login' <<< "$pr_json")"
+          pr_draft="$(jq -r '.draft' <<< "$pr_json")"
+          pr_base="$(jq -r '.base.ref' <<< "$pr_json")"
+          pr_state="$(jq -r '.state' <<< "$pr_json")"
+          pr_title="$(jq -r '.title' <<< "$pr_json")"
+          pr_body="$(jq -r '.body // empty' <<< "$pr_json")"
+          pr_head_sha="$(jq -r '.head.sha' <<< "$pr_json")"
+
+          if [[ -z "$workflow_head_sha" || "$workflow_head_sha" == "null" ]]; then
+            echo "workflow_run.head_sha missing." >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "eligible=false"
+              echo "pr_number=$pr_number"
+              echo "reason=missing_workflow_head_sha"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$workflow_head_sha" != "$pr_head_sha" ]]; then
+            echo "workflow_run head_sha ($workflow_head_sha) is not current PR head ($pr_head_sha)." >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "eligible=false"
+              echo "pr_number=$pr_number"
+              echo "reason=stale_workflow_run_head_sha"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          normalize_version() {
+            local version="$1"
+            version="${version,,}"
+            version="${version#v}"
+            version="${version#^}"
+            version="${version#~}"
+            version="${version#>=}"
+            version="${version#<=}"
+            version="${version#=}"
+            version="${version%%-*}"
+            version="${version%%+*}"
+            version="${version%%/*}"
+            version="$(printf '%s' "$version" | sed -E 's/[^0-9.].*$//')"
+            IFS='.' read -r major minor patch <<< "$version"
+            minor="${minor:-0}"
+            patch="${patch:-0}"
+            if ! [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ && "$patch" =~ ^[0-9]+$ ]]; then
+              return 1
+            fi
+            echo "$major $minor $patch"
+          }
+
+          classify_update() {
+            local old_version="$1"
+            local new_version="$2"
+
+            if ! parsed_old="$(normalize_version "$old_version")"; then
+              echo "invalid"
+              return 0
+            fi
+            if ! parsed_new="$(normalize_version "$new_version")"; then
+              echo "invalid"
+              return 0
+            fi
+
+            read -r old_major old_minor old_patch <<< "$parsed_old"
+            read -r new_major new_minor new_patch <<< "$parsed_new"
+
+            if (( new_major > old_major )); then
+              echo "major"
+              return 0
+            fi
+            if (( new_major < old_major )); then
+              echo "downgrade"
+              return 0
+            fi
+            if (( new_minor > old_minor )); then
+              if (( old_major == 0 )); then
+                echo "minor_0x"
+                return 0
+              fi
+              echo "minor"
+              return 0
+            fi
+            if (( new_minor < old_minor )); then
+              echo "major"
+              return 0
+            fi
+            if (( new_patch > old_patch )); then
+              echo "patch"
+              return 0
+            fi
+            echo "non_increase"
+          }
+
+          extract_version_pairs() {
+            local text="$1"
+            local line
+            text="$(printf '%s' "$text" | tr '\n' ' ' | tr '`"' '  ' | sed -E 's/[[:space:]]+/ /g')"
+            while IFS= read -r line; do
+              [[ -z "$line" ]] && continue
+              old="$(printf '%s' "$line" | sed -E 's/.*[Ff][Rr][Oo][Mm][[:space:]]+([^[:space:]]+)[[:space:]]+[Tt][Oo][[:space:]]+([^[:space:]]+).*/\1/')"
+              new="$(printf '%s' "$line" | sed -E 's/.*[Ff][Rr][Oo][Mm][[:space:]]+[^[:space:]]+[[:space:]]+[Tt][Oo][[:space:]]+([^[:space:]]+).*/\1/')"
+              if [[ -n "$old" && -n "$new" ]]; then
+                echo "$old $new"
+              fi
+            done < <(printf '%s' "$text" | grep -Eio 'from[[:space:]]+[^[:space:]]+[[:space:]]+to[[:space:]]+[^[:space:]]+')
+          }
+
+          is_allowed_file() {
+            local file="$1"
+            if [[ "$file" == "pyproject.toml" || "$file" == "uv.lock" ]]; then
+              return 0
+            fi
+            if [[ "$file" == "frontend/package.json" || "$file" == "frontend/pnpm-lock.yaml" ]]; then
+              return 0
+            fi
+            if [[ "$file" == ".github/dependabot.yml" || "$file" == ".github/dependabot.yaml" ]]; then
+              return 0
+            fi
+            if [[ "$file" == .github/workflows/*.yml || "$file" == .github/workflows/*.yaml ]]; then
+              return 0
+            fi
+            return 1
+          }
+
+          eligible=true
+          reason="approved"
+          update_types=()
+          checked_files=()
+
+          if [[ "$pr_author" != "dependabot[bot]" ]]; then
+            eligible=false
+            reason="author_not_dependabot"
+          elif [[ "$pr_base" != "main" ]]; then
+            eligible=false
+            reason="base_not_main"
+          elif [[ "$pr_draft" == "true" ]]; then
+            eligible=false
+            reason="pr_is_draft"
+          elif [[ "$pr_state" != "open" ]]; then
+            eligible=false
+            reason="pr_not_open"
+          fi
+
+          file_list="$(mktemp)"
+          files_blocked=()
+          gh api "repos/$GH_REPO/pulls/$pr_number/files?per_page=100" --paginate --jq '.[].filename' | tee "$file_list" >/dev/null
+          while IFS= read -r file; do
+            checked_files+=("$file")
+            if ! is_allowed_file "$file"; then
+              eligible=false
+              reason="disallowed_file_scope"
+              files_blocked+=("$file")
+            fi
+          done < "$file_list"
+
+          if ((${#checked_files[@]} == 0)); then
+            eligible=false
+            reason="no_changed_files"
+          fi
+
+          candidates=()
+          while IFS= read -r pair; do
+            [[ -z "$pair" ]] && continue
+            candidates+=("$pair")
+          done < <(extract_version_pairs "$pr_title"$'\n'"$pr_body")
+          while IFS= read -r pair; do
+            [[ -z "$pair" ]] && continue
+            candidates+=("$pair")
+          done < <(gh api "repos/$GH_REPO/pulls/$pr_number/commits" --paginate --jq '.[].commit.message')
+
+          found_update=false
+          unsafe_update=false
+          for pair in "${candidates[@]}"; do
+            old_version="$(printf '%s' "$pair" | awk '{print $1}')"
+            new_version="$(printf '%s' "$pair" | awk '{print $2}')"
+            update_type="$(classify_update "$old_version" "$new_version")"
+            case "$update_type" in
+              patch|minor)
+                update_types+=("$update_type")
+                found_update=true
+                ;;
+              *)
+                if [[ "$update_type" == "invalid" || "$update_type" == "non_increase" || "$update_type" == "downgrade" || "$update_type" == "major" || "$update_type" == "minor_0x" ]]; then
+                  unsafe_update=true
+                  update_types+=("$update_type")
+                  found_update=true
+                else
+                  unsafe_update=true
+                  update_types+=("$update_type")
+                  found_update=true
+                fi
+                ;;
+            esac
+          done
+
+          if [[ "$found_update" != true ]]; then
+            labels="$(jq -r '.labels[].name | ascii_downcase' <<< "$pr_json" | tr '\n' ' ')"
+            if printf '%s' "$labels" | grep -Eq '(^| )major($| )'; then
+              eligible=false
+              reason="version_update_unresolved"
+            else
+              if printf '%s' "$labels" | grep -Eq '(^| )(patch|minor)( |$)'; then
+                found_update=true
+              else
+                eligible=false
+                reason="version_update_unresolved"
+              fi
+            fi
+          elif [[ "$unsafe_update" == true ]]; then
+            if [[ "$reason" == "approved" ]]; then
+              reason="version_update_risky"
+            fi
+            eligible=false
+          fi
+
+          if [[ "$eligible" == true ]]; then
+            summary_reason="eligible_for_merge"
+          else
+            summary_reason="blocked:$reason"
+          fi
+
+          {
+            echo "## Eligibility"
+            echo "- PR #$pr_number"
+            echo "- Base branch: \`$pr_base\`"
+            echo "- Author: \`$pr_author\`"
+            echo "- Draft: \`$pr_draft\`"
+            echo "- Update decision: \`$summary_reason\`"
+            echo "- Files checked: ${#checked_files[@]}"
+            if ((${#checked_files[@]} > 0)); then
+              echo ""
+              echo "### Changed files"
+              for file in "${checked_files[@]}"; do
+                echo "- \`$file\`"
+              done
+            fi
+            echo ""
+            echo "### Update evidence"
+            if (( ${#candidates[@]} > 0 )); then
+              for pair in "${candidates[@]}"; do
+                echo "- \`$pair\`"
+              done
+            else
+              echo "- no version pair found in PR title/body/commit messages"
+            fi
+            if ((${#update_types[@]} > 0)); then
+              echo ""
+              echo "### Update types"
+              for item in "${update_types[@]}"; do
+                echo "- \`$item\`"
+              done
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          {
+            echo "eligible=$eligible"
+            echo "pr_number=$pr_number"
+            echo "reason=$reason"
+          } >> "$GITHUB_OUTPUT"
+          rm -f "$file_list"
+
+      - name: Enable auto-merge for eligible Dependabot PR
+        if: steps.evaluate.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pr_number="${{ steps.evaluate.outputs.pr_number }}"
+          gh pr merge "$pr_number" --auto --squash --delete-branch
