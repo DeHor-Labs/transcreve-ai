@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   evaluate-and-merge:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request' }}
     runs-on: ubuntu-latest
     env:
       GH_REPO: ${{ github.repository }}
@@ -60,6 +60,8 @@ jobs:
           pr_title="$(jq -r '.title' <<< "$pr_json")"
           pr_body="$(jq -r '.body // empty' <<< "$pr_json")"
           pr_head_sha="$(jq -r '.head.sha' <<< "$pr_json")"
+          repo_owner="${GH_REPO%%/*}"
+          repo_name="${GH_REPO#*/}"
 
           if [[ -z "$workflow_head_sha" || "$workflow_head_sha" == "null" ]]; then
             echo "workflow_run.head_sha missing." >> "$GITHUB_STEP_SUMMARY"
@@ -80,6 +82,40 @@ jobs:
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
+          # shellcheck disable=SC2016 # GraphQL variables are expanded by gh, not by bash.
+          review_gate_json="$(gh api graphql \
+            -f owner="$repo_owner" \
+            -f repo="$repo_name" \
+            -F number="$pr_number" \
+            -f query='
+              query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    mergeStateStatus
+                    reviewDecision
+                    reviewRequests(first: 10) {
+                      totalCount
+                    }
+                    reviewThreads(first: 100) {
+                      nodes {
+                        isResolved
+                      }
+                    }
+                    latestReviews(first: 50) {
+                      nodes {
+                        state
+                      }
+                    }
+                  }
+                }
+              }
+              ')"
+          merge_state_status="$(jq -r '.data.repository.pullRequest.mergeStateStatus // "UNKNOWN"' <<< "$review_gate_json")"
+          review_decision="$(jq -r '.data.repository.pullRequest.reviewDecision // ""' <<< "$review_gate_json")"
+          review_requests_count="$(jq -r '.data.repository.pullRequest.reviewRequests.totalCount // 0' <<< "$review_gate_json")"
+          unresolved_threads="$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]? | select(.isResolved == false)] | length' <<< "$review_gate_json")"
+          changes_requested_reviews="$(jq '[.data.repository.pullRequest.latestReviews.nodes[]? | select(.state == "CHANGES_REQUESTED")] | length' <<< "$review_gate_json")"
 
           normalize_version() {
             local version="$1"
@@ -194,6 +230,12 @@ jobs:
           elif [[ "$pr_state" != "open" ]]; then
             eligible=false
             reason="pr_not_open"
+          elif [[ "$review_decision" == "CHANGES_REQUESTED" || "$review_requests_count" != "0" || "$unresolved_threads" != "0" || "$changes_requested_reviews" != "0" ]]; then
+            eligible=false
+            reason="review_gate_blocked"
+          elif [[ "$merge_state_status" != "CLEAN" && "$merge_state_status" != "BEHIND" && "$merge_state_status" != "UNKNOWN" ]]; then
+            eligible=false
+            reason="merge_state_not_safe"
           fi
 
           file_list="$(mktemp)"
@@ -280,6 +322,11 @@ jobs:
             echo "- Base branch: \`$pr_base\`"
             echo "- Author: \`$pr_author\`"
             echo "- Draft: \`$pr_draft\`"
+            echo "- Merge state: \`$merge_state_status\`"
+            echo "- Review decision: \`${review_decision:-none}\`"
+            echo "- Pending review requests: \`$review_requests_count\`"
+            echo "- Unresolved review threads: \`$unresolved_threads\`"
+            echo "- Changes requested reviews: \`$changes_requested_reviews\`"
             echo "- Update decision: \`$summary_reason\`"
             echo "- Files checked: ${#checked_files[@]}"
             if ((${#checked_files[@]} > 0)); then
@@ -310,6 +357,7 @@ jobs:
           {
             echo "eligible=$eligible"
             echo "pr_number=$pr_number"
+            echo "pr_head_sha=$pr_head_sha"
             echo "reason=$reason"
           } >> "$GITHUB_OUTPUT"
           rm -f "$file_list"
@@ -321,4 +369,25 @@ jobs:
         run: |
           set -euo pipefail
           pr_number="${{ steps.evaluate.outputs.pr_number }}"
-          gh pr merge "$pr_number" --auto --squash --delete-branch
+          expected_head_sha="${{ steps.evaluate.outputs.pr_head_sha }}"
+
+          merge_state="UNKNOWN"
+          for _ in {1..6}; do
+            merge_state="$(gh pr view "$pr_number" --json mergeStateStatus --jq '.mergeStateStatus')"
+            [[ "$merge_state" != "UNKNOWN" ]] && break
+            sleep 10
+          done
+
+          echo "mergeStateStatus=$merge_state" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$merge_state" == "BEHIND" ]]; then
+            gh pr update-branch "$pr_number"
+            echo "Updated Dependabot branch; waiting for the next CI workflow_run before enabling auto-merge." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ "$merge_state" != "CLEAN" ]]; then
+            echo "Skipping auto-merge because mergeStateStatus is $merge_state." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          gh pr merge "$pr_number" --auto --squash --delete-branch --match-head-commit "$expected_head_sha"
