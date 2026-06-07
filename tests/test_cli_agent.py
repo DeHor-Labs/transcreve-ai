@@ -184,6 +184,7 @@ class TestCliAgentRun(unittest.TestCase):
         self.assertEqual(code, 0, msg=err)
         payload = json.loads(out.strip() or "{}")
         self.assertEqual(payload["total"], 1)
+        self.assertTrue(payload["success"])
         self.assertEqual(payload["ok"], 1)
         expected_skill_path = str(out_dir / "run-001" / "skill.md")
         self.assertEqual(payload["items"][0]["template_paths"]["skill"], expected_skill_path)
@@ -303,6 +304,7 @@ class TestCliAgentRun(unittest.TestCase):
         payload = json.loads(out.strip() or "{}")
         self.assertEqual(run_mock.call_count, 1)
         self.assertEqual(payload["total"], 1)
+        self.assertTrue(payload["success"])
         self.assertEqual(payload["ok"], 1)
         self.assertEqual(payload["items"][0]["position"], 1)
 
@@ -336,9 +338,63 @@ class TestCliAgentRun(unittest.TestCase):
         payload = json.loads(out.strip() or "{}")
         self.assertEqual(run_mock.call_count, 1)
         self.assertEqual(payload["total"], 1)
+        self.assertFalse(payload["success"])
         self.assertEqual(payload["ok"], 0)
         self.assertEqual(payload["failed"], 1)
         self.assertIn("download falhou", payload["items"][0]["error"])
+
+    def test_agent_batch_strict_json_exits_nonzero_on_partial_failure(self) -> None:
+        from video_kb.agent_workflow import AgentWorkflowResult
+        from video_kb.sources import SourceProbe
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            sources = tmp_path / "sources.txt"
+            sources.write_text(
+                "https://a.example/video.mp4\nhttps://b.example/video.mp4\n",
+                encoding="utf-8",
+            )
+            out_dir = tmp_path / "out"
+            result = AgentWorkflowResult(
+                source="https://b.example/video.mp4",
+                probe=SourceProbe(
+                    source="https://b.example/video.mp4",
+                    kind="direct_media_url",
+                    adapter="yt_dlp_direct_media",
+                    is_url=True,
+                    canonical="https://b.example/video.mp4",
+                ),
+                run_id="run-002",
+                workdir=str(out_dir / "run-002"),
+                analysis_path=str(out_dir / "run-002" / "analysis.json"),
+                markdown_path=str(out_dir / "run-002" / "knowledge.md"),
+            )
+
+            with patch(
+                "video_kb.batch.run_agent_workflow",
+                side_effect=[RuntimeError("download falhou"), result],
+            ) as run_mock:
+                out, err, code = _run_cmd(
+                    [
+                        "agent",
+                        "batch",
+                        str(sources),
+                        "--out",
+                        str(out_dir),
+                        "--strict",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(code, 1, msg=err)
+        payload = json.loads(out.strip() or "{}")
+        self.assertEqual(run_mock.call_count, 2)
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["total"], 2)
+        self.assertEqual(payload["ok"], 1)
+        self.assertEqual(payload["failed"], 1)
+        self.assertEqual(payload["ok_count"], 1)
+        self.assertEqual(payload["failed_count"], 1)
 
     def test_agent_batch_invalid_sources_file_json_returns_structured_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -349,6 +405,7 @@ class TestCliAgentRun(unittest.TestCase):
 
         self.assertEqual(code, 1, msg=err)
         payload = json.loads(out.strip() or "{}")
+        self.assertFalse(payload["success"])
         self.assertEqual(payload["ok"], 0)
         self.assertEqual(payload["failed"], 1)
         self.assertEqual(payload["error"]["code"], "agent_batch_failed")

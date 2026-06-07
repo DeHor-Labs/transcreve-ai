@@ -152,9 +152,7 @@ class GeminiProvider(AIProvider):
             _slide_label(timestamp) if is_carousel else f"Timestamp: {format_timestamp(timestamp)}"
         )
         speech_label = (
-            "Trecho de fala associado ao slide"
-            if is_carousel
-            else "Trecho de fala perto do frame"
+            "Trecho de fala associado ao slide" if is_carousel else "Trecho de fala perto do frame"
         )
         prompt = (
             f"Voce esta analisando um {unit} para uma base de conhecimento. "
@@ -198,11 +196,16 @@ class GeminiProvider(AIProvider):
             "Transforme a analise multimodal abaixo em JSON para base de conhecimento. "
             "Responda apenas JSON valido com as chaves: summary, chapters, entities, "
             "tools_or_products, claims, action_items, questions. "
+            "Se a transcricao estiver vazia, descartada ou marcada como baixa utilidade, "
+            "priorize Frames/OCR/visual e deixe claro que a evidencia principal veio da tela. "
+            "Nao invente fala ausente.\n\n"
             + structure_instruction
             + "Metadados:\n"
             + json.dumps(metadata_dict(ctx.metadata), ensure_ascii=False, indent=2)
+            + "\n\nPerfil de evidencias:\n"
+            + json.dumps(ctx.evidence_profile, ensure_ascii=False, indent=2)
             + "\n\nTranscricao:\n"
-            + compact_text(ctx.transcript_text, 20000)
+            + (compact_text(ctx.transcript_text, 20000) or "[sem transcricao util]")
             + ("\n\nSlides/OCR/visual:\n" if is_carousel else "\n\nFrames/OCR/visual:\n")
             + compact_text(frame_notes, 20000)
         )

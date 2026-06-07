@@ -60,6 +60,7 @@ class AnalysisResult:
     frames: list[FrameObservation] = field(default_factory=list)
     synthesis: KnowledgeSynthesis = field(default_factory=KnowledgeSynthesis)
     warnings: list[str] = field(default_factory=list)
+    evidence_profile: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

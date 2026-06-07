@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from video_kb.models import AnalysisResult, KnowledgeSynthesis, SourceMetadata
+from video_kb.models import AnalysisResult, FrameObservation, KnowledgeSynthesis, SourceMetadata
 from video_kb.skill_intelligence import (
     build_skill_intelligence,
     render_skill_markdown,
@@ -60,6 +60,25 @@ class SkillIntelligenceTests(unittest.TestCase):
             payload = json.loads(skill_json.read_text(encoding="utf-8"))
 
         self.assertEqual(payload["run_id"], "run-skill-001")
+
+    def test_visual_only_frames_preserve_tools_in_skill_draft(self) -> None:
+        result = _sample_result()
+        result.transcript_text = ""
+        result.synthesis.tools_or_products = []
+        result.frames = [
+            FrameObservation(
+                timestamp=2,
+                image_path="frames/qa.jpg",
+                ocr_text="Testes de Automacao - Playwright - Cypress - Selenium",
+                visual_note="Tela lista ferramentas de automacao.",
+            )
+        ]
+
+        data = build_skill_intelligence(result)
+
+        self.assertIn("Playwright", data["evidence"]["tools_or_products"])
+        self.assertIn("Cypress", data["evidence"]["tools_or_products"])
+        self.assertTrue(any("Playwright" in trigger for trigger in data["skill"]["triggers"]))
 
 
 if __name__ == "__main__":

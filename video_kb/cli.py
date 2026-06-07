@@ -203,6 +203,12 @@ def build_parser() -> argparse.ArgumentParser:
     agent_batch.add_argument("--top-k", type=int, default=5)
     agent_batch.add_argument("--limit", type=int, default=0, help="Limita numero de origens")
     agent_batch.add_argument("--fail-fast", action="store_true", default=False)
+    agent_batch.add_argument(
+        "--strict",
+        action="store_true",
+        default=False,
+        help="Retorna exit code 1 se qualquer item do batch falhar",
+    )
     agent_batch.add_argument("--json", dest="as_json", action="store_true", help="Saida JSON")
 
     # ------------------------------------------------------------------
@@ -742,7 +748,7 @@ def _cmd_agent_batch(args: argparse.Namespace) -> None:
         print(f"Resumo: {Path(args.out) / 'batch.md'}")
         print(f"JSON: {Path(args.out) / 'batch.json'}")
 
-    if summary["failed"] and args.fail_fast:
+    if summary["failed"] and (args.fail_fast or args.strict):
         sys.exit(1)
 
 
@@ -750,8 +756,11 @@ def _batch_error_summary(sources_file: Path, exc: Exception) -> dict[str, object
     return {
         "source_file": str(sources_file),
         "total": 0,
+        "success": False,
         "ok": 0,
         "failed": 1,
+        "ok_count": 0,
+        "failed_count": 1,
         "items": [],
         "error": {
             "code": "agent_batch_failed",

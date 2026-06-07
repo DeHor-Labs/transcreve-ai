@@ -14,6 +14,7 @@ def build_skill_intelligence(result: AnalysisResult) -> dict[str, Any]:
     text = _joined_text(result)
     name = _skill_name(result)
     summary = _summary(result)
+    tools = _unique([*list(result.synthesis.tools_or_products or []), *_detect_tools(text)])
     triggers = _triggers(text, result)
     steps = _workflow_steps(text, result)
     prompts = _prompt_templates(text, result)
@@ -27,7 +28,7 @@ def build_skill_intelligence(result: AnalysisResult) -> dict[str, Any]:
         "description": _clip(summary, 220),
         "evidence": {
             "summary": summary,
-            "tools_or_products": list(result.synthesis.tools_or_products or []),
+            "tools_or_products": tools,
             "claims": list(result.synthesis.claims or []),
             "actions": list(result.synthesis.action_items or []),
             "questions": list(result.synthesis.questions or []),
@@ -57,7 +58,7 @@ def render_skill_markdown(result: AnalysisResult) -> str:
     lines: list[str] = []
     lines.append("---")
     lines.append(f"name: {data['name']}")
-    lines.append(f"description: \"{_escape_frontmatter(data['description'])}\"")
+    lines.append(f'description: "{_escape_frontmatter(data["description"])}"')
     lines.append("---")
     lines.append("")
     lines.append(f"# {data['name']}")
@@ -151,8 +152,9 @@ def _triggers(text: str, result: AnalysisResult) -> list[str]:
         triggers.append("O video mostrar organizacao de conhecimento em database ou Notion.")
     if "hook" in lower or "cta" in lower or "reels" in lower:
         triggers.append("O objetivo for converter referencia em conteudo publicavel.")
-    if result.synthesis.tools_or_products:
-        tools = ", ".join(result.synthesis.tools_or_products[:6])
+    tools = _unique([*list(result.synthesis.tools_or_products or []), *_detect_tools(text)])
+    if tools:
+        tools = ", ".join(tools[:6])
         triggers.append("Ferramentas detectadas: " + tools)
     return _unique(triggers)
 
@@ -247,6 +249,27 @@ def _safety_notes(text: str) -> list[str]:
     if "notion" in lower:
         notes.append("Confirmar schema/permissoes antes de escrever em workspace Notion real.")
     return notes
+
+
+def _detect_tools(text: str) -> list[str]:
+    tools = {
+        "Claude": r"\bclaude\b|cloud code",
+        "Notion": r"\bnotion\b",
+        "Instagram": r"\binstagram\b",
+        "TikTok": r"\btiktok\b",
+        "YouTube": r"\byoutube\b",
+        "Python": r"\bpython\b",
+        "Playwright": r"\bplaywright\b",
+        "Cypress": r"\bcypress\b",
+        "Selenium": r"\bselenium\b",
+        "Appium": r"\bappium\b",
+        "Robot": r"\brobot\b",
+        "Azure DevOps": r"\bazure\s+devops\b",
+        "Jira": r"\bjira\b",
+        "Trello": r"\btrello\b",
+        "Qase": r"\bqase\b",
+    }
+    return [name for name, pattern in tools.items() if re.search(pattern, text, re.I)]
 
 
 def _first_sentence(text: str) -> str:

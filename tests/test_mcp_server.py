@@ -135,7 +135,15 @@ class TestMcpServer(unittest.TestCase):
 
         def fake_batch(_: Path, options: AgentWorkflowOptions, **__: object) -> dict[str, object]:
             captured.append(options)
-            return {"total": 1, "ok": 1, "failed": 0, "items": []}
+            return {
+                "total": 1,
+                "success": True,
+                "ok": 1,
+                "failed": 0,
+                "ok_count": 1,
+                "failed_count": 0,
+                "items": [],
+            }
 
         with patch("video_kb.batch.run_agent_batch", side_effect=fake_batch):
             payload = mcp_server.mcp_agent_batch(
@@ -151,6 +159,7 @@ class TestMcpServer(unittest.TestCase):
                 storage="filesystem",
             )
 
+        self.assertTrue(payload["success"])
         self.assertEqual(payload["ok"], 1)
         self.assertEqual(len(captured), 1)
         options = captured[0]

@@ -46,7 +46,7 @@ def extract_audio(media_path: Path, audio_path: Path) -> Path:
 
 def _sample_timestamps(duration: float, interval: float, max_frames: int) -> list[float]:
     duration = max(0.0, duration)
-    interval = max(1.0, interval)
+    interval = _effective_frame_interval(duration, interval)
     if duration <= 0:
         return [0.0]
 
@@ -70,6 +70,19 @@ def _sample_timestamps(duration: float, interval: float, max_frames: int) -> lis
                 seen.add(value)
         return selected
     return timestamps
+
+
+def _effective_frame_interval(duration: float, requested_interval: float) -> float:
+    requested_interval = max(1.0, requested_interval)
+    if requested_interval != 5.0:
+        return requested_interval
+    if duration <= 0:
+        return requested_interval
+    if duration <= 30:
+        return min(requested_interval, 2.0)
+    if duration <= 90:
+        return min(requested_interval, 3.0)
+    return requested_interval
 
 
 def extract_frames(

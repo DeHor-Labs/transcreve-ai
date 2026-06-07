@@ -607,6 +607,36 @@ class TestAskFunction(unittest.TestCase):
         self.assertIsInstance(result.answer, str)
         self.assertGreater(len(result.sources), 0)
 
+    def test_ask_com_chunks_e_resposta_not_found_usa_fallback_evidencial(self) -> None:
+        from video_kb.embeddings.rag import ask, index_run
+
+        provider = _make_mock_provider(dim=4)
+        db = _tmp_db()
+        analysis = _make_analysis(summary="Video mostra Playwright, Cypress e Selenium.")
+
+        index_run(
+            run_id="run-ask-fallback",
+            analysis=analysis,
+            provider=provider,
+            provider_name="mock",
+            model_name="mock-model",
+            db_path=db,
+        )
+
+        synth = MagicMock()
+        synth.complete.return_value = "Nao encontrei informacao sobre isso nos videos indexados."
+
+        result = ask(
+            question="Isso e util para meus projetos?",
+            embed_provider=provider,
+            synth_provider=synth,
+            db_path=db,
+        )
+
+        self.assertIn("Fatos extraidos", result.answer)
+        self.assertIn("Playwright", result.answer)
+        self.assertGreater(len(result.sources), 0)
+
     def test_ask_result_tem_question(self) -> None:
         from video_kb.embeddings.rag import ask
 

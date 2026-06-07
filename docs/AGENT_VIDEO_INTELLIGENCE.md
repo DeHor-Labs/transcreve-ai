@@ -40,11 +40,14 @@ Para muitos links salvos, use o batch:
 transcreveai agent batch ./sources.txt \
   --template content \
   --template skill \
+  --strict \
   --json
 ```
 
 O batch aceita `.txt`, `.csv` e `.json`, grava `batch.md`/`batch.json` e inclui
-os `template_paths` de cada run.
+`success`, `ok_count`, `failed_count` e os `template_paths` de cada run. Use
+`--strict` quando uma falha parcial deve retornar exit code `1` para o agente
+chamador.
 
 Para demos repetiveis, smoke tests ou uso por agentes em paralelo, isole o indice
 SQLite. Assim o mesmo video pode ser testado de novo sem colidir com runs antigos:

@@ -158,6 +158,7 @@ class LocalProvider(AIProvider):
             "whisper_model": self.whisper_model,
             "transcript_chars": len(transcript),
             "frames_count": len(frames),
+            "evidence_profile": ctx.evidence_profile,
         }
 
         return KnowledgeSynthesis(

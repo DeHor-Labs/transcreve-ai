@@ -95,6 +95,7 @@ transcreveai agent run "https://www.instagram.com/reel/..." \
 transcreveai agent batch ./sources.txt \
   --template content \
   --template skill \
+  --strict \
   --json
 
 # Or run each step manually:

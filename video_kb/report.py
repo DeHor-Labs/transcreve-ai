@@ -35,6 +35,12 @@ def render_markdown(result: AnalysisResult) -> str:
         lines.extend(f"- {warning}" for warning in result.warnings)
         lines.append("")
 
+    evidence_lines = _render_evidence_profile(result.evidence_profile)
+    if evidence_lines:
+        lines.append("## Evidencias usadas")
+        lines.extend(evidence_lines)
+        lines.append("")
+
     if result.synthesis.summary:
         lines.append("## Resumo")
         lines.append(result.synthesis.summary.strip())
@@ -125,6 +131,67 @@ def _format_upload_date(value: str) -> str:
         except (OverflowError, OSError, ValueError):
             return raw
     return raw
+
+
+def _render_evidence_profile(profile: dict) -> list[str]:
+    if not profile:
+        return []
+
+    primary = str(profile.get("primary_signal") or "").strip()
+    speech = profile.get("speech") if isinstance(profile.get("speech"), dict) else {}
+    visual = profile.get("visual") if isinstance(profile.get("visual"), dict) else {}
+
+    lines: list[str] = []
+    if primary:
+        lines.append(f"- Sinal principal: {_human_signal(primary)}")
+
+    speech_status = str(speech.get("status") or "").strip()
+    if speech_status:
+        speech_text = _human_speech_status(speech_status)
+        chars = int(speech.get("chars") or 0)
+        segments = int(speech.get("segments") or 0)
+        if chars or segments:
+            speech_text += f" ({segments} segmentos, {chars} caracteres)"
+        reason = str(speech.get("reason") or "").strip()
+        if reason:
+            speech_text += f"; motivo: {reason}"
+        lines.append(f"- Fala/transcricao: {speech_text}")
+
+    frames = int(visual.get("frames") or 0)
+    ocr_frames = int(visual.get("ocr_frames") or 0)
+    visual_note_frames = int(visual.get("visual_note_frames") or 0)
+    if frames or ocr_frames or visual_note_frames:
+        lines.append(
+            "- Visual/OCR: "
+            f"{frames} frames, {ocr_frames} com OCR, "
+            f"{visual_note_frames} com analise visual"
+        )
+
+    return lines
+
+
+def _human_signal(value: str) -> str:
+    labels = {
+        "speech+visual": "fala + visual/OCR",
+        "speech": "fala",
+        "vision": "visao por IA",
+        "ocr": "OCR/texto na tela",
+        "frames": "frames extraidos",
+        "metadata": "metadados",
+    }
+    return labels.get(value, value)
+
+
+def _human_speech_status(value: str) -> str:
+    labels = {
+        "available": "disponivel",
+        "empty": "sem fala util detectada",
+        "discarded_low_value": "descartada por baixa utilidade",
+        "unsupported": "nao suportada pelo provider",
+        "not_applicable": "nao aplicavel",
+        "not_run": "nao executada",
+    }
+    return labels.get(value, value)
 
 
 def _render_chapters(chapters: list[dict], is_carousel: bool = False) -> list[str]:

@@ -75,6 +75,42 @@ class ReportTests(unittest.TestCase):
         self.assertIn("![frame](frames/frame.jpg)", markdown)
         self.assertIn("Frame capturado", markdown)
 
+    def test_render_markdown_includes_evidence_profile(self):
+        result = AnalysisResult(
+            run_id="run-visual",
+            created_at="2026-06-01T00:00:00Z",
+            source="local.mp4",
+            workdir="/tmp/run",
+            media_path="source.mp4",
+            audio_path="audio.mp3",
+            metadata=SourceMetadata(source="local.mp4", title="Visual First"),
+            frames=[
+                FrameObservation(
+                    timestamp=1,
+                    image_path="frames/frame.jpg",
+                    ocr_text="Playwright",
+                    visual_note="Tela lista ferramentas de QA.",
+                )
+            ],
+            evidence_profile={
+                "primary_signal": "vision",
+                "speech": {
+                    "status": "discarded_low_value",
+                    "chars": 0,
+                    "segments": 0,
+                    "reason": "caption_credit_only",
+                },
+                "visual": {"frames": 1, "ocr_frames": 1, "visual_note_frames": 1},
+            },
+        )
+
+        markdown = render_markdown(result)
+
+        self.assertIn("## Evidencias usadas", markdown)
+        self.assertIn("Sinal principal: visao por IA", markdown)
+        self.assertIn("Fala/transcricao: descartada por baixa utilidade", markdown)
+        self.assertIn("Visual/OCR: 1 frames, 1 com OCR, 1 com analise visual", markdown)
+
     def test_render_markdown_adapts_to_carousel(self):
         result = AnalysisResult(
             run_id="run-carousel",

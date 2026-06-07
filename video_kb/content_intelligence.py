@@ -17,6 +17,7 @@ def build_content_intelligence(result: AnalysisResult) -> dict[str, Any]:
     screen_text = _screen_text(result.frames)
     synthesis = result.synthesis
     is_carousel = _is_carousel(result)
+    caption_items = _extract_caption_items(result.metadata.description)
 
     hooks = _extract_hooks(result.transcript_text, screen_text, synthesis.summary)
     ctas = _extract_ctas(result.transcript_text, synthesis.action_items)
@@ -55,6 +56,7 @@ def build_content_intelligence(result: AnalysisResult) -> dict[str, Any]:
             "actions": list(synthesis.action_items or []),
             "detected_platforms": platforms,
             "cta_signals": ctas,
+            "caption_items": caption_items,
             "slide_count" if is_carousel else "frame_count": len(result.frames or []),
             "transcript_chars": len(result.transcript_text or ""),
         },
@@ -67,7 +69,13 @@ def build_content_intelligence(result: AnalysisResult) -> dict[str, Any]:
             "platform_variants": _platform_variants(platforms, hooks, thesis, ctas),
             "export_fields": export_fields,
         },
-        "automation_opportunities": _automation_opportunities(text, platforms, tools, is_carousel),
+        "automation_opportunities": _automation_opportunities(
+            text,
+            platforms,
+            tools,
+            is_carousel,
+            caption_items,
+        ),
         "caveats": _caveats(is_carousel),
     }
 
@@ -103,6 +111,7 @@ def render_content_markdown(result: AnalysisResult) -> str:
     _append_list(lines, "Claims extraidos", evidence["claims"])
     _append_list(lines, "CTAs e acoes detectadas", evidence["cta_signals"] or evidence["actions"])
     _append_list(lines, "Plataformas citadas", evidence["detected_platforms"])
+    _append_caption_items(lines, "Itens extraidos da legenda", evidence["caption_items"])
 
     lines.append("## Creator Remix")
     lines.append(f"- Tese: {_inline(remix['thesis'])}")
@@ -242,8 +251,51 @@ def _detect_tools(text: str) -> list[str]:
         "TikTok": r"\btiktok\b",
         "YouTube": r"\byoutube\b",
         "Python": r"\bpython\b",
+        "Playwright": r"\bplaywright\b",
+        "Cypress": r"\bcypress\b",
+        "Selenium": r"\bselenium\b",
+        "Appium": r"\bappium\b",
+        "Robot": r"\brobot\b",
+        "Azure DevOps": r"\bazure\s+devops\b",
+        "Jira": r"\bjira\b",
+        "Trello": r"\btrello\b",
+        "Qase": r"\bqase\b",
     }
     return [name for name, pattern in tools.items() if re.search(pattern, text, re.I)]
+
+
+def _extract_caption_items(description: str) -> list[dict[str, str]]:
+    items: list[dict[str, str]] = []
+    current_section = ""
+    for raw_line in (description or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        bullet = re.match(r"^(?:[-*•]|\d+[.)])\s*(.+)$", line)
+        if bullet:
+            text = _clean_sentence(bullet.group(1))
+            if text:
+                items.append({"section": current_section, "text": text})
+            continue
+        if _looks_like_caption_heading(line):
+            current_section = _clean_caption_heading(line)
+    return items
+
+
+def _looks_like_caption_heading(line: str) -> bool:
+    lower = line.lower()
+    return (
+        "trilha" in lower
+        or "projetos" in lower
+        or line.endswith(":")
+        or bool(re.match(r"^[^\w\s]+", line))
+    )
+
+
+def _clean_caption_heading(line: str) -> str:
+    clean = re.sub(r"^[^\w]+", "", line).strip()
+    clean = re.sub(r"\s+", " ", clean)
+    return clean.rstrip(":")
 
 
 def _is_carousel(result: AnalysisResult) -> bool:
@@ -348,6 +400,7 @@ def _automation_opportunities(
     platforms: list[str],
     tools: list[str],
     is_carousel: bool = False,
+    caption_items: list[dict[str, str]] | None = None,
 ) -> list[dict[str, str]]:
     lower = text.lower()
     source_label = "carrossel" if is_carousel else "video"
@@ -355,8 +408,7 @@ def _automation_opportunities(
         {
             "feature": "--template content",
             "why": (
-                "Gerar hook, angulo, roteiro, CTA, variacoes por plataforma "
-                "e campos de exportacao."
+                "Gerar hook, angulo, roteiro, CTA, variacoes por plataforma e campos de exportacao."
             ),
             "priority": "Alta",
             "effort": "Baixo/medio",
@@ -392,6 +444,19 @@ def _automation_opportunities(
                 "effort": "Medio",
                 "risk": "Medio",
                 "evidence": "O video menciona Claude/Skills como formato reutilizavel.",
+            }
+        )
+    if caption_items:
+        items.append(
+            {
+                "feature": "Caption/List Intelligence",
+                "why": "Promover bullets e listas da legenda para o pacote final.",
+                "priority": "Alta",
+                "effort": "Baixo",
+                "risk": "Baixo",
+                "evidence": (
+                    f"{len(caption_items)} itens estruturados foram encontrados na legenda."
+                ),
             }
         )
     return items
@@ -444,6 +509,20 @@ def _append_list(lines: list[str], title: str, items: list[str]) -> None:
         return
     lines.append(f"## {title}")
     lines.extend(f"- {item}" for item in clean_items)
+    lines.append("")
+
+
+def _append_caption_items(lines: list[str], title: str, items: list[dict[str, str]]) -> None:
+    clean_items = [
+        (str(item.get("section") or "Legenda").strip(), str(item.get("text") or "").strip())
+        for item in items
+        if str(item.get("text") or "").strip()
+    ]
+    if not clean_items:
+        return
+    lines.append(f"## {title}")
+    for section, text in clean_items:
+        lines.append(f"- **{section}:** {text}")
     lines.append("")
 
 

@@ -27,7 +27,9 @@ from .providers import (
 from .report import write_markdown
 from .skill_intelligence import write_skill_artifacts
 from .storage import ArtifactPaths, load_storage, resolve_storage_name
+from .transcript_quality import TranscriptQualityResult, sanitize_transcription
 from .utils import (
+    compact_text,
     ensure_dir,
     iso_now,
     now_id,
@@ -278,6 +280,7 @@ class VideoKnowledgePipeline:
 
         provider_name = resolve_provider_name(self.options.provider_name or None)
         use_ai = self._should_use_ai(provider_name)
+        transcript_quality = TranscriptQualityResult(text="", segments=[], status="not_run")
 
         if use_ai:
             _emit("ai", f"Transcrevendo e descrevendo com IA ({provider_name})...")
@@ -296,15 +299,38 @@ class VideoKnowledgePipeline:
                         run_dir / "audio_chunks",
                         language=self.options.language,
                     )
-                    result.transcript_text = transcribe_result.text
-                    result.transcript_segments = transcribe_result.segments
+                    transcript_quality = sanitize_transcription(
+                        transcribe_result.text,
+                        transcribe_result.segments,
+                    )
+                    result.transcript_text = transcript_quality.text
+                    result.transcript_segments = transcript_quality.segments
+                    _append_transcript_quality_warning(result, transcript_quality, has_audio=True)
                 elif audio_path:
+                    transcript_quality = TranscriptQualityResult(
+                        text="",
+                        segments=[],
+                        status="unsupported",
+                        reason=f"provider:{provider_name}",
+                    )
                     result.warnings.append(
                         f"Transcricao nao suportada pelo provider '{provider_name}'."
                     )
                 elif result.metadata.media_kind == "carousel":
+                    transcript_quality = TranscriptQualityResult(
+                        text="",
+                        segments=[],
+                        status="not_applicable",
+                        reason="carousel_without_audio",
+                    )
                     result.warnings.append("Carrossel sem audio; usando OCR/visao por slide.")
                 else:
+                    transcript_quality = TranscriptQualityResult(
+                        text="",
+                        segments=[],
+                        status="not_applicable",
+                        reason="audio_unavailable",
+                    )
                     result.warnings.append(
                         "Audio nao disponivel; seguindo com OCR/visao quando suportado."
                     )
@@ -331,11 +357,13 @@ class VideoKnowledgePipeline:
                         break  # nao tentar os demais frames
 
                 # --- sintese ---
+                result.evidence_profile = _build_evidence_profile(result, transcript_quality)
                 ctx = SynthesisContext(
                     metadata=result.metadata,
                     transcript_text=result.transcript_text,
                     frames=result.frames,
                     media_kind=result.metadata.media_kind,
+                    evidence_profile=result.evidence_profile,
                 )
                 try:
                     result.synthesis = provider.synthesize(ctx)
@@ -363,6 +391,9 @@ class VideoKnowledgePipeline:
                 )
             print("5/6 Gerando sintese local...")  # sem step SSE para este branch
             result.synthesis = _local_synthesis(result)
+
+        if not result.evidence_profile:
+            result.evidence_profile = _build_evidence_profile(result, transcript_quality)
 
         _emit("persist", "Salvando analysis.json e knowledge.md...")
         write_json(run_dir / "analysis.json", result.to_dict())
@@ -515,6 +546,63 @@ def _extract_collection_frames(
         timestamp_offset += max(duration, 1.0)
 
     return frame_paths
+
+
+def _append_transcript_quality_warning(
+    result: AnalysisResult,
+    transcript_quality: TranscriptQualityResult,
+    *,
+    has_audio: bool,
+) -> None:
+    if transcript_quality.warning:
+        result.warnings.append(transcript_quality.warning)
+    elif has_audio and transcript_quality.status == "empty":
+        result.warnings.append(
+            "Nenhuma fala util foi detectada na transcricao; a analise deve priorizar OCR/visao."
+        )
+
+
+def _build_evidence_profile(
+    result: AnalysisResult,
+    transcript_quality: TranscriptQualityResult,
+) -> dict[str, object]:
+    ocr_frames = sum(1 for frame in result.frames if (frame.ocr_text or "").strip())
+    visual_note_frames = sum(1 for frame in result.frames if (frame.visual_note or "").strip())
+    has_speech = bool((result.transcript_text or "").strip())
+    has_visual = bool(result.frames)
+
+    if has_speech and (ocr_frames or visual_note_frames):
+        primary_signal = "speech+visual"
+    elif has_speech:
+        primary_signal = "speech"
+    elif visual_note_frames:
+        primary_signal = "vision"
+    elif ocr_frames:
+        primary_signal = "ocr"
+    elif has_visual:
+        primary_signal = "frames"
+    else:
+        primary_signal = "metadata"
+
+    speech: dict[str, object] = {
+        "status": transcript_quality.status,
+        "chars": len(result.transcript_text or ""),
+        "segments": len(result.transcript_segments),
+    }
+    if transcript_quality.reason:
+        speech["reason"] = transcript_quality.reason
+    if transcript_quality.original_text:
+        speech["discarded_preview"] = compact_text(transcript_quality.original_text, 180)
+
+    return {
+        "primary_signal": primary_signal,
+        "speech": speech,
+        "visual": {
+            "frames": len(result.frames),
+            "ocr_frames": ocr_frames,
+            "visual_note_frames": visual_note_frames,
+        },
+    }
 
 
 def _local_synthesis(result: AnalysisResult) -> KnowledgeSynthesis:

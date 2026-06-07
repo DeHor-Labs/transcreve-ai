@@ -165,11 +165,16 @@ class AnthropicProvider(AIProvider):
             "Transforme a analise multimodal abaixo em JSON para base de conhecimento. "
             "Responda apenas JSON valido com as chaves: summary, chapters, entities, "
             "tools_or_products, claims, action_items, questions. "
-            "chapters deve ser uma lista de objetos com start, title e notes.\n\n"
+            "chapters deve ser uma lista de objetos com start, title e notes. "
+            "Se a transcricao estiver vazia, descartada ou marcada como baixa utilidade, "
+            "priorize Frames/OCR/visual e deixe claro que a evidencia principal veio da tela. "
+            "Nao invente fala ausente.\n\n"
             "Metadados:\n"
             + json.dumps(metadata_dict(ctx.metadata), ensure_ascii=False, indent=2)
+            + "\n\nPerfil de evidencias:\n"
+            + json.dumps(ctx.evidence_profile, ensure_ascii=False, indent=2)
             + "\n\nTranscricao:\n"
-            + compact_text(ctx.transcript_text, 20000)
+            + (compact_text(ctx.transcript_text, 20000) or "[sem transcricao util]")
             + "\n\nFrames/OCR/visual:\n"
             + compact_text(frame_notes, 20000)
         )

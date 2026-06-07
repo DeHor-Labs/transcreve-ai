@@ -28,7 +28,7 @@ Use this skill for video-to-knowledge flows only. Prefer this path when the user
 - Se o cliente tiver a superficie MCP do TranscreveAI instalada, prefira a tool `agent_run` para fluxo completo, `agent_batch` para listas salvas e `sources_probe` para pre-check. Use o CLI como fallback universal.
 - Se o MCP ainda nao estiver validado no cliente, confirme a instalacao com `transcreveai-mcp --help` e registre o servidor como comando stdio (`transcreveai-mcp --transport stdio`) antes de depender das tools. Use `transcreve-ai[mcp,rag]` quando `index`/`ask` forem necessarios.
 - Prefira `transcreveai agent run "<origem>" --json` quando o objetivo for executar o fluxo completo em CLI.
-- Para varias URLs/origens em arquivo `.txt`, `.csv` ou `.json`, prefira `transcreveai agent batch "<arquivo>" --json`.
+- Para varias URLs/origens em arquivo `.txt`, `.csv` ou `.json`, prefira `transcreveai agent batch "<arquivo>" --json`. Use `--strict` quando qualquer item com falha deve bloquear a automacao chamadora; leia `success`, `ok_count` e `failed_count` no resumo.
 - Use `--question "..."` para fazer probe, analyze, indexacao e pergunta no mesmo comando.
 - Quando o video tiver foco em criacao/distribuicao de conteudo, produto, marketing, vendas ou workflows de creator, inclua `--template content` (ou `templates: ["content"]` via MCP). Leia tambem `content.md`/`content.json`/`content.csv`, que separam evidencia extraida de inferencia de produto/conteudo e geram campos para Notion/CSV.
 - Quando o video mencionar skills, agentes, prompts, Claude, Codex, automacao ou workflows reutilizaveis, inclua `--template skill` (ou `templates: ["skill"]` via MCP). Leia `skill.md`/`skill.json` antes de sugerir como adicionar o conteudo na ferramenta.

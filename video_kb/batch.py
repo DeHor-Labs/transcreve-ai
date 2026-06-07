@@ -49,12 +49,17 @@ def run_agent_batch(
                 break
         items.append({"position": position, **payload})
 
+    ok_count = sum(1 for item in items if item.get("ok"))
+    failed_count = sum(1 for item in items if not item.get("ok"))
     summary = {
         "source_file": str(sources_file),
         "created_at": iso_now(),
         "total": len(items),
-        "ok": sum(1 for item in items if item.get("ok")),
-        "failed": sum(1 for item in items if not item.get("ok")),
+        "success": failed_count == 0,
+        "ok": ok_count,
+        "failed": failed_count,
+        "ok_count": ok_count,
+        "failed_count": failed_count,
         "items": items,
     }
     _write_batch_artifacts(summary, out_dir)

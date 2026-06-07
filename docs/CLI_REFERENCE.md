@@ -110,6 +110,7 @@ transcreveai agent batch ./sources.txt --ai auto --language pt --json
 transcreveai agent batch ./sources.csv \
   --template content \
   --template skill \
+  --strict \
   --json
 
 # Smoke test isolado, sem custo de IA
@@ -130,6 +131,7 @@ transcreveai --index-db /tmp/transcreveai-batch.db agent batch ./sources.json \
 | `--out PATH` | Diretorio de saida do batch | `outputs-batch` |
 | `--limit N` | Limita a quantidade de origens processadas (`0` = sem limite) | `0` |
 | `--fail-fast` | Para no primeiro erro inesperado | `false` |
+| `--strict` | Retorna exit code `1` se qualquer item falhar, mesmo continuando o batch | `false` |
 | `--frame-interval N` | Intervalo entre frames por run | `5.0` |
 | `--max-frames N` | Maximo de frames locais por run (`0` = sem limite) | `80` |
 | `--visual-limit N` | Maximo de frames enviados para visao por IA em cada run | `30` |
@@ -147,9 +149,11 @@ transcreveai --index-db /tmp/transcreveai-batch.db agent batch ./sources.json \
 | `--storage NOME` | Backend de armazenamento | `filesystem` |
 | `--force` | Reprocessa origens ja conhecidas | `false` |
 
-O comando grava `batch.json` e `batch.md` no diretorio de saida. Cada item do
-resumo inclui `ok`, `run_id`, `analysis_path`, `markdown_path` e, quando houver
-templates, `template_paths` com os caminhos gerados.
+O comando grava `batch.json` e `batch.md` no diretorio de saida. O resumo inclui
+`success`, `total`, `ok`, `failed`, `ok_count` e `failed_count`; `ok` e
+`failed` sao mantidos como contadores por compatibilidade. Cada item inclui
+`ok`, `run_id`, `analysis_path`, `markdown_path` e, quando houver templates,
+`template_paths` com os caminhos gerados.
 
 ---
 

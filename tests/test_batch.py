@@ -90,6 +90,9 @@ class BatchTests(unittest.TestCase):
                 summary = run_agent_batch(source_file, options)
 
             self.assertEqual(summary["ok"], 1)
+            self.assertTrue(summary["success"])
+            self.assertEqual(summary["ok_count"], 1)
+            self.assertEqual(summary["failed_count"], 0)
             self.assertTrue((out_dir / "batch.json").exists())
             self.assertTrue((out_dir / "batch.md").exists())
 
@@ -114,6 +117,9 @@ class BatchTests(unittest.TestCase):
             self.assertEqual(summary["total"], 1)
             self.assertEqual(summary["ok"], 0)
             self.assertEqual(summary["failed"], 1)
+            self.assertFalse(summary["success"])
+            self.assertEqual(summary["ok_count"], 0)
+            self.assertEqual(summary["failed_count"], 1)
             self.assertEqual(summary["items"][0]["position"], 1)
             self.assertIn("download falhou", summary["items"][0]["error"])
 

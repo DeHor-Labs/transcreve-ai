@@ -38,11 +38,16 @@ class AskResult:
 # Prompt de sintese
 # ---------------------------------------------------------------------------
 
+_NOT_FOUND_ANSWER = "Nao encontrei informacao sobre isso nos videos indexados."
+
 _PROMPT_TEMPLATE = """\
 Responda a pergunta abaixo com base EXCLUSIVAMENTE nos trechos fornecidos.
 Se a resposta nao estiver nos trechos, diga exatamente:
-"Nao encontrei informacao sobre isso nos videos indexados."
+"_NOT_FOUND_ANSWER_PLACEHOLDER"
 Cite os videos usados pelo titulo ao responder.
+Se a pergunta pedir utilidade, aplicacao a projetos, riscos ou proximos passos,
+separe fatos extraidos dos trechos de inferencias praticas. Nao diga que um
+projeto especifico aparece no video se ele nao estiver nos trechos.
 
 Pergunta: {question}
 
@@ -58,7 +63,10 @@ def _build_prompt(question: str, hits: list[SearchHit]) -> str:
         titulo = hit.title or hit.run_id
         lines.append(f'[{i}] "{hit.excerpt}" - {titulo} ({tipo})')
     trechos = "\n".join(lines)
-    return _PROMPT_TEMPLATE.format(question=question, trechos=trechos)
+    return _PROMPT_TEMPLATE.replace(
+        "_NOT_FOUND_ANSWER_PLACEHOLDER",
+        _NOT_FOUND_ANSWER,
+    ).format(question=question, trechos=trechos)
 
 
 def _chunk_type_label(chunk_type: str) -> str:
@@ -209,14 +217,48 @@ def ask(
     if not hits:
         return AskResult(
             question=question,
-            answer="Nao encontrei informacao sobre isso nos videos indexados.",
+            answer=_NOT_FOUND_ANSWER,
             sources=[],
         )
 
     prompt = _build_prompt(question, hits)
     answer = _call_complete(synth_provider, prompt)
+    if _is_not_found_answer(answer):
+        answer = _fallback_evidence_answer(hits)
 
     return AskResult(question=question, answer=answer, sources=hits)
+
+
+def _is_not_found_answer(answer: str) -> bool:
+    return (answer or "").strip().strip('"') == _NOT_FOUND_ANSWER
+
+
+def _fallback_evidence_answer(hits: list[SearchHit]) -> str:
+    lines = [
+        "Encontrei trechos relacionados, mas eles nao respondem a pergunta inteira diretamente.",
+        "",
+        "Fatos extraidos dos videos indexados:",
+    ]
+    seen: set[str] = set()
+    for hit in hits[:6]:
+        excerpt = (hit.excerpt or "").strip()
+        if not excerpt:
+            continue
+        key = excerpt.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        title = hit.title or hit.run_id
+        lines.append(f"- {excerpt} ({title})")
+
+    lines.extend(
+        [
+            "",
+            "Limite: aplicacoes a projetos ou produtos citados na pergunta devem ser "
+            "tratadas como inferencia do agente, nao como fala do video.",
+        ]
+    )
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------

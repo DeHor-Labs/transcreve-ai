@@ -43,11 +43,13 @@ class SynthesisContext:
         transcript_text: str,
         frames: list[FrameObservation],
         media_kind: str | None = None,
+        evidence_profile: dict[str, Any] | None = None,
     ) -> None:
         self.metadata = metadata
         self.transcript_text = transcript_text
         self.frames = frames
         self.media_kind = media_kind or metadata.media_kind
+        self.evidence_profile = evidence_profile or {}
 
     @property
     def is_carousel(self) -> bool:
