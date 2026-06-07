@@ -1,6 +1,7 @@
 from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from .models import AnalysisResult, FrameObservation, TranscriptSegment
 from .utils import compact_text, format_timestamp
@@ -133,13 +134,15 @@ def _format_upload_date(value: str) -> str:
     return raw
 
 
-def _render_evidence_profile(profile: dict) -> list[str]:
+def _render_evidence_profile(profile: dict[str, Any]) -> list[str]:
     if not profile:
         return []
 
     primary = str(profile.get("primary_signal") or "").strip()
-    speech = profile.get("speech") if isinstance(profile.get("speech"), dict) else {}
-    visual = profile.get("visual") if isinstance(profile.get("visual"), dict) else {}
+    speech_raw = profile.get("speech")
+    visual_raw = profile.get("visual")
+    speech: dict[str, Any] = speech_raw if isinstance(speech_raw, dict) else {}
+    visual: dict[str, Any] = visual_raw if isinstance(visual_raw, dict) else {}
 
     lines: list[str] = []
     if primary:

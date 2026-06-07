@@ -154,8 +154,8 @@ def _triggers(text: str, result: AnalysisResult) -> list[str]:
         triggers.append("O objetivo for converter referencia em conteudo publicavel.")
     tools = _unique([*list(result.synthesis.tools_or_products or []), *_detect_tools(text)])
     if tools:
-        tools = ", ".join(tools[:6])
-        triggers.append("Ferramentas detectadas: " + tools)
+        tools_text = ", ".join(tools[:6])
+        triggers.append("Ferramentas detectadas: " + tools_text)
     return _unique(triggers)
 
 
