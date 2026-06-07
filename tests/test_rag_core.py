@@ -637,6 +637,32 @@ class TestAskFunction(unittest.TestCase):
         self.assertIn("Playwright", result.answer)
         self.assertGreater(len(result.sources), 0)
 
+    def test_prompt_orienta_inferencias_como_derivadas(self) -> None:
+        from video_kb.embeddings.rag import _build_prompt
+        from video_kb.embeddings.store import SearchHit
+
+        prompt = _build_prompt(
+            "Isso e util para nossos projetos?",
+            [
+                SearchHit(
+                    run_id="run-qa",
+                    title="Video QA",
+                    source_url="https://example.com/video",
+                    chunk_type="summary",
+                    excerpt="Video mostra Playwright e Cypress.",
+                    score=0.9,
+                    chapter_start=None,
+                )
+            ],
+        )
+
+        normalized_prompt = " ".join(prompt.split())
+        self.assertIn("inferencias derivadas dos fatos recuperados", normalized_prompt)
+        self.assertIn(
+            "Nao diga que um projeto especifico aparece no video se ele nao estiver nos trechos",
+            normalized_prompt,
+        )
+
     def test_ask_result_tem_question(self) -> None:
         from video_kb.embeddings.rag import ask
 

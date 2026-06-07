@@ -48,6 +48,8 @@ Cite os videos usados pelo titulo ao responder.
 Se a pergunta pedir utilidade, aplicacao a projetos, riscos ou proximos passos,
 separe fatos extraidos dos trechos de inferencias praticas. Nao diga que um
 projeto especifico aparece no video se ele nao estiver nos trechos.
+Nunca escreva que inferencias, riscos ou aplicacoes foram "extraidos do video";
+rotule-os como inferencias derivadas dos fatos recuperados.
 
 Pergunta: {question}
 
