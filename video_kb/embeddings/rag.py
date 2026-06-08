@@ -91,7 +91,7 @@ def _prompt_excerpt(hit: SearchHit) -> str:
     if hit.chunk_type != "evidence":
         return excerpt
     excerpt = re.sub(r"\s*\|\s*confianca_da_deteccao:\s*[^|]+", "", excerpt)
-    excerpt = re.sub(r";\s*support_confidence=[^;|]+", "", excerpt)
+    excerpt = re.sub(r"(?:(?<=:)|^|;)\s*support_confidence=[^;|]+;?\s*", "", excerpt)
     return excerpt
 
 

@@ -161,7 +161,7 @@ def _build_evidence_chunk(item: Any) -> str:
         return ""
 
     kind = str(item.get("kind") or "").strip()
-    if kind and kind != "tool_or_product":
+    if not kind or kind != "tool_or_product":
         return ""
 
     value = str(item.get("value") or "").strip()

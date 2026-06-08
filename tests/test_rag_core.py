@@ -759,7 +759,7 @@ class TestAskFunction(unittest.TestCase):
                     chunk_type="evidence",
                     excerpt=(
                         "valor: Playwright | confianca_da_deteccao: medium | "
-                        "supports: signal=vision; support_confidence=medium; timestamp=4.0"
+                        "supports: support_confidence=medium; signal=vision; timestamp=4.0"
                     ),
                     score=0.9,
                     chapter_start=None,

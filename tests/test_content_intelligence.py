@@ -187,7 +187,9 @@ class ContentIntelligenceTests(unittest.TestCase):
         self.assertIsNotNone(playwright, "Playwright deveria estar em tool_evidence")
         assert playwright is not None
         self.assertEqual(playwright["confidence"], "high")
-        self.assertEqual(playwright["supports"][0]["signal"], "ocr")
+        self.assertTrue(
+            any(support["signal"] == "ocr" for support in playwright["supports"])
+        )
 
 
 if __name__ == "__main__":

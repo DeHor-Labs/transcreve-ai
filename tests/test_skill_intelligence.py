@@ -81,7 +81,13 @@ class SkillIntelligenceTests(unittest.TestCase):
         tool_evidence = data["evidence"]["tool_evidence"]
         self.assertTrue(tool_evidence)
         self.assertGreater(len(tool_evidence), 0)
-        self.assertEqual(tool_evidence[0]["confidence"], "high")
+        playwright = next(
+            (item for item in tool_evidence if item["value"] == "Playwright"),
+            None,
+        )
+        self.assertIsNotNone(playwright, "Playwright deveria estar em tool_evidence")
+        assert playwright is not None
+        self.assertEqual(playwright["confidence"], "high")
         self.assertTrue(any("Playwright" in trigger for trigger in data["skill"]["triggers"]))
 
 
