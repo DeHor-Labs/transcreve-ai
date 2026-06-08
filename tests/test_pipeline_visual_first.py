@@ -100,7 +100,8 @@ def test_pipeline_discards_low_value_transcript_and_marks_visual_first() -> None
     assert provider.seen_context.transcript_text == ""
     assert provider.seen_context.evidence_profile["primary_signal"] == "vision"
     assert any(item.value == "Playwright" for item in result.evidence_items)
-    playwright = next(item for item in result.evidence_items if item.value == "Playwright")
+    playwright = next((item for item in result.evidence_items if item.value == "Playwright"), None)
+    assert playwright is not None, "Expected Playwright in evidence_items"
     assert playwright.confidence == "high"
     assert any(support.signal == "ocr" for support in playwright.supports)
     assert any(item["value"] == "Playwright" for item in analysis["evidence_items"])

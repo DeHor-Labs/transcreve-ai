@@ -104,7 +104,8 @@ def test_tool_names_from_evidence_e_render_legivel() -> None:
     assert "Swagger" in names
     assert "Docker" in names
 
-    docker = next(item for item in items if item.value == "Docker")
+    docker = next((item for item in items if item.value == "Docker"), None)
+    assert docker is not None, "Expected Docker in build_evidence_items output"
     rendered = render_evidence_item(docker)
 
     assert "Docker: confianca alta" in rendered
@@ -118,7 +119,8 @@ def test_get_evidence_items_normaliza_payload_vindo_de_json() -> None:
     result.evidence_items = payload  # type: ignore[assignment]
 
     items = get_evidence_items(result)
-    docker = next(item for item in items if item.value == "Docker")
+    docker = next((item for item in items if item.value == "Docker"), None)
+    assert docker is not None, "Expected Docker in normalized evidence items"
     rendered = render_evidence_item(docker)
 
     assert docker.confidence == "high"

@@ -156,8 +156,10 @@ class TestChunkDossier(unittest.TestCase):
         analysis["synthesis"]["tools_or_products"] = ["Ferramentas de automacao"]
 
         chunks = chunk_dossier(analysis, "run-001")
-        entity_chunk = next(c for c in chunks if c.chunk_type == "entity")
+        entity_chunk = next((c for c in chunks if c.chunk_type == "entity"), None)
+        self.assertIsNotNone(entity_chunk)
 
+        assert entity_chunk is not None
         self.assertIn("Playwright", entity_chunk.chunk_text)
         self.assertNotIn("Ferramentas de automacao", entity_chunk.chunk_text)
 
