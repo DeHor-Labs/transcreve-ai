@@ -268,10 +268,6 @@ def _detect_platforms(text: str) -> list[str]:
     return [name for name, pattern in platforms.items() if re.search(pattern, text, re.I)]
 
 
-def _detect_tools(text: str) -> list[str]:
-    return detect_tool_names(text)
-
-
 def _extract_caption_items(description: str) -> list[dict[str, str]]:
     items: list[dict[str, str]] = []
     current_section = ""

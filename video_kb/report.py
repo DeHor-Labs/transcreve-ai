@@ -6,6 +6,7 @@ from typing import Any
 from .evidence import get_evidence_items, render_evidence_item, tool_names_from_evidence
 from .models import AnalysisResult, FrameObservation, TranscriptSegment
 from .utils import compact_text, format_timestamp
+from .utils import unique_strings as _unique
 
 _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 
@@ -119,18 +120,6 @@ def _append_list(lines: list[str], title: str, items: Iterable) -> None:
     lines.append(f"## {title}")
     lines.extend(f"- {item}" for item in clean_items)
     lines.append("")
-
-
-def _unique(items: Iterable[str]) -> list[str]:
-    seen: set[str] = set()
-    result: list[str] = []
-    for item in items:
-        clean = str(item or "").strip()
-        key = clean.lower()
-        if clean and key not in seen:
-            seen.add(key)
-            result.append(clean)
-    return result
 
 
 def _is_carousel(result: AnalysisResult) -> bool:
