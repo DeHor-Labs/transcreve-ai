@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -85,6 +86,11 @@ def test_pipeline_discards_low_value_transcript_and_marks_visual_first() -> None
                                 result = VideoKnowledgePipeline(options).run(
                                     "https://example.com/reel"
                                 )
+                                analysis = json.loads(
+                                    (Path(result.workdir) / "analysis.json").read_text(
+                                        encoding="utf-8"
+                                    )
+                                )
 
     assert result.transcript_text == ""
     assert result.transcript_segments == []
@@ -93,4 +99,9 @@ def test_pipeline_discards_low_value_transcript_and_marks_visual_first() -> None
     assert provider.seen_context is not None
     assert provider.seen_context.transcript_text == ""
     assert provider.seen_context.evidence_profile["primary_signal"] == "vision"
+    assert any(item.value == "Playwright" for item in result.evidence_items)
+    playwright = next(item for item in result.evidence_items if item.value == "Playwright")
+    assert playwright.confidence == "high"
+    assert any(support.signal == "ocr" for support in playwright.supports)
+    assert any(item["value"] == "Playwright" for item in analysis["evidence_items"])
     assert any("baixa utilidade" in warning for warning in result.warnings)

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .evidence import get_evidence_items, render_evidence_item, tool_names_from_evidence
 from .models import AnalysisResult, FrameObservation, TranscriptSegment
 from .utils import compact_text, format_timestamp
 
@@ -49,8 +50,18 @@ def render_markdown(result: AnalysisResult) -> str:
 
     chapter_title = "Slides / estrutura" if is_carousel else "Capitulos"
     _append_list(lines, chapter_title, _render_chapters(result.synthesis.chapters, is_carousel))
+    evidence_items = get_evidence_items(result)
+    tools = _unique(
+        [*result.synthesis.tools_or_products, *tool_names_from_evidence(evidence_items)]
+    )
+
     _append_list(lines, "Entidades", result.synthesis.entities)
-    _append_list(lines, "Ferramentas e produtos", result.synthesis.tools_or_products)
+    _append_list(lines, "Ferramentas e produtos", tools)
+    _append_list(
+        lines,
+        "Ferramentas com proveniencia",
+        [render_evidence_item(item) for item in evidence_items if item.kind == "tool_or_product"],
+    )
     _append_list(lines, "Claims e ideias importantes", result.synthesis.claims)
     _append_list(lines, "Acoes sugeridas", result.synthesis.action_items)
     _append_list(lines, "Perguntas em aberto", result.synthesis.questions)
@@ -108,6 +119,18 @@ def _append_list(lines: list[str], title: str, items: Iterable) -> None:
     lines.append(f"## {title}")
     lines.extend(f"- {item}" for item in clean_items)
     lines.append("")
+
+
+def _unique(items: Iterable[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        clean = str(item or "").strip()
+        key = clean.lower()
+        if clean and key not in seen:
+            seen.add(key)
+            result.append(clean)
+    return result
 
 
 def _is_carousel(result: AnalysisResult) -> bool:

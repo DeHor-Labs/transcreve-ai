@@ -34,6 +34,23 @@ class FrameObservation:
 
 
 @dataclass
+class EvidenceSupport:
+    signal: str
+    confidence: str
+    timestamp: float | None = None
+    frame_path: str = ""
+    excerpt: str = ""
+
+
+@dataclass
+class EvidenceItem:
+    kind: str
+    value: str
+    confidence: str
+    supports: list[EvidenceSupport] = field(default_factory=list)
+
+
+@dataclass
 class KnowledgeSynthesis:
     summary: str = ""
     chapters: list[dict[str, Any]] = field(default_factory=list)
@@ -61,6 +78,7 @@ class AnalysisResult:
     synthesis: KnowledgeSynthesis = field(default_factory=KnowledgeSynthesis)
     warnings: list[str] = field(default_factory=list)
     evidence_profile: dict[str, Any] = field(default_factory=dict)
+    evidence_items: list[EvidenceItem] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

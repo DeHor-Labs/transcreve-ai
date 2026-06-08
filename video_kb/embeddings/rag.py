@@ -12,6 +12,7 @@ Funcao principal: ask(question, ...) -> AskResult
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -50,6 +51,8 @@ separe fatos extraidos dos trechos de inferencias praticas. Nao diga que um
 projeto especifico aparece no video se ele nao estiver nos trechos.
 Nunca escreva que inferencias, riscos ou aplicacoes foram "extraidos do video";
 rotule-os como inferencias derivadas dos fatos recuperados.
+Quando um trecho mencionar confianca de evidencia, trate isso como forca da
+deteccao/proveniencia, nao como risco tecnico da ferramenta.
 
 Pergunta: {question}
 
@@ -63,7 +66,8 @@ def _build_prompt(question: str, hits: list[SearchHit]) -> str:
     for i, hit in enumerate(hits, start=1):
         tipo = _chunk_type_label(hit.chunk_type)
         titulo = hit.title or hit.run_id
-        lines.append(f'[{i}] "{hit.excerpt}" - {titulo} ({tipo})')
+        excerpt = _prompt_excerpt(hit)
+        lines.append(f'[{i}] "{excerpt}" - {titulo} ({tipo})')
     trechos = "\n".join(lines)
     return _PROMPT_TEMPLATE.replace(
         "_NOT_FOUND_ANSWER_PLACEHOLDER",
@@ -76,9 +80,19 @@ def _chunk_type_label(chunk_type: str) -> str:
         "summary": "resumo",
         "chapter": "capitulo",
         "entity": "entidades",
+        "evidence": "evidencia/proveniencia",
         "transcript": "transcricao",
     }
     return labels.get(chunk_type, chunk_type)
+
+
+def _prompt_excerpt(hit: SearchHit) -> str:
+    excerpt = hit.excerpt or ""
+    if hit.chunk_type != "evidence":
+        return excerpt
+    excerpt = re.sub(r"\s*\|\s*confianca_da_deteccao:\s*[^|]+", "", excerpt)
+    excerpt = re.sub(r";\s*support_confidence=[^;|]+", "", excerpt)
+    return excerpt
 
 
 # ---------------------------------------------------------------------------

@@ -175,6 +175,12 @@ class ContentIntelligenceTests(unittest.TestCase):
         self.assertIn("Cypress", data["evidence"]["tools_or_products"])
         self.assertIn("Azure DevOps", data["evidence"]["tools_or_products"])
         self.assertIn("Qase", data["evidence"]["tools_or_products"])
+        self.assertTrue(data["evidence"]["tool_evidence"])
+        playwright = next(
+            item for item in data["evidence"]["tool_evidence"] if item["value"] == "Playwright"
+        )
+        self.assertEqual(playwright["confidence"], "high")
+        self.assertEqual(playwright["supports"][0]["signal"], "ocr")
 
 
 if __name__ == "__main__":
