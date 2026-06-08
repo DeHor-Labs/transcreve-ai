@@ -55,5 +55,12 @@ class TestSha256Url(unittest.TestCase):
         self.assertEqual(h1, h2)
 
 
+class TestUniqueStrings(unittest.TestCase):
+    def test_unique_strings_preserva_falsy_significativo(self) -> None:
+        from video_kb.utils import unique_strings
+
+        self.assertEqual(unique_strings([None, "", 0, "0", False, "false"]), ["0", "False"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import urllib.parse
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -69,6 +70,18 @@ def compact_text(text: str, limit: int = 12000) -> str:
         return text
     half = max(1000, limit // 2)
     return text[:half].rstrip() + "\n\n...[truncated]...\n\n" + text[-half:].lstrip()
+
+
+def unique_strings(items: Iterable[Any]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        clean = re.sub(r"\s+", " ", "" if item is None else str(item)).strip()
+        key = clean.lower()
+        if clean and key not in seen:
+            seen.add(key)
+            result.append(clean)
+    return result
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:

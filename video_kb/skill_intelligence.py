@@ -14,6 +14,7 @@ from .evidence import (
 )
 from .models import AnalysisResult
 from .utils import compact_text, format_timestamp, slugify
+from .utils import unique_strings as _unique
 
 
 def build_skill_intelligence(result: AnalysisResult) -> dict[str, Any]:
@@ -282,10 +283,6 @@ def _safety_notes(text: str) -> list[str]:
     return notes
 
 
-def _detect_tools(text: str) -> list[str]:
-    return detect_tool_names(text)
-
-
 def _first_sentence(text: str) -> str:
     for item in re.split(r"(?<=[.!?])\s+", text or ""):
         clean = re.sub(r"\s+", " ", item).strip()
@@ -313,14 +310,3 @@ def _append_list(lines: list[str], title: str, items: list[str]) -> None:
     lines.extend(f"- {item}" for item in clean_items)
     lines.append("")
 
-
-def _unique(items: list[str]) -> list[str]:
-    seen: set[str] = set()
-    result: list[str] = []
-    for item in items:
-        clean = re.sub(r"\s+", " ", item or "").strip()
-        key = clean.lower()
-        if clean and key not in seen:
-            seen.add(key)
-            result.append(clean)
-    return result

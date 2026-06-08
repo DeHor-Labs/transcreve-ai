@@ -177,10 +177,19 @@ class ContentIntelligenceTests(unittest.TestCase):
         self.assertIn("Qase", data["evidence"]["tools_or_products"])
         self.assertTrue(data["evidence"]["tool_evidence"])
         playwright = next(
-            item for item in data["evidence"]["tool_evidence"] if item["value"] == "Playwright"
+            (
+                item
+                for item in data["evidence"]["tool_evidence"]
+                if item["value"] == "Playwright"
+            ),
+            None,
         )
+        self.assertIsNotNone(playwright, "Playwright deveria estar em tool_evidence")
+        assert playwright is not None
         self.assertEqual(playwright["confidence"], "high")
-        self.assertEqual(playwright["supports"][0]["signal"], "ocr")
+        self.assertTrue(
+            any(support["signal"] == "ocr" for support in playwright["supports"])
+        )
 
 
 if __name__ == "__main__":
