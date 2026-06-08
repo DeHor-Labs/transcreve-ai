@@ -76,7 +76,7 @@ def unique_strings(items: Iterable[Any]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
     for item in items:
-        clean = re.sub(r"\s+", " ", str(item or "")).strip()
+        clean = re.sub(r"\s+", " ", "" if item is None else str(item)).strip()
         key = clean.lower()
         if clean and key not in seen:
             seen.add(key)
