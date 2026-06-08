@@ -769,7 +769,29 @@ class TestAskFunction(unittest.TestCase):
 
         self.assertIn("valor: Playwright", prompt)
         self.assertIn("signal=vision", prompt)
+        self.assertIn("timestamp=4.0", prompt)
         self.assertNotIn("confianca_da_deteccao", prompt)
+        self.assertNotIn("support_confidence", prompt)
+
+        prompt = _build_prompt(
+            "Quais riscos?",
+            [
+                SearchHit(
+                    run_id="run-qa",
+                    title="Video QA",
+                    source_url="https://example.com/video",
+                    chunk_type="evidence",
+                    excerpt=(
+                        "valor: Playwright | confianca_da_deteccao: medium | "
+                        "supports: signal=vision; support_confidence=medium; timestamp=4.0"
+                    ),
+                    score=0.9,
+                    chapter_start=None,
+                )
+            ],
+        )
+
+        self.assertIn("signal=vision; timestamp=4.0", prompt)
         self.assertNotIn("support_confidence", prompt)
 
     def test_ask_result_tem_question(self) -> None:
