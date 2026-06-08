@@ -78,6 +78,8 @@ class SkillIntelligenceTests(unittest.TestCase):
 
         self.assertIn("Playwright", data["evidence"]["tools_or_products"])
         self.assertIn("Cypress", data["evidence"]["tools_or_products"])
+        self.assertTrue(data["evidence"]["tool_evidence"])
+        self.assertEqual(data["evidence"]["tool_evidence"][0]["confidence"], "high")
         self.assertTrue(any("Playwright" in trigger for trigger in data["skill"]["triggers"]))
 
 

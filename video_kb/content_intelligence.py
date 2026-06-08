@@ -7,6 +7,13 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .evidence import (
+    detect_tool_names,
+    evidence_items_to_dicts,
+    get_evidence_items,
+    render_evidence_item,
+    tool_names_from_evidence,
+)
 from .models import AnalysisResult, FrameObservation
 from .utils import compact_text, format_timestamp
 
@@ -18,11 +25,17 @@ def build_content_intelligence(result: AnalysisResult) -> dict[str, Any]:
     synthesis = result.synthesis
     is_carousel = _is_carousel(result)
     caption_items = _extract_caption_items(result.metadata.description)
+    evidence_items = get_evidence_items(result)
 
     hooks = _extract_hooks(result.transcript_text, screen_text, synthesis.summary)
     ctas = _extract_ctas(result.transcript_text, synthesis.action_items)
     platforms = _detect_platforms(text)
-    tools = _unique([*synthesis.tools_or_products, *_detect_tools(text)])
+    tools = _unique(
+        [
+            *tool_names_from_evidence(evidence_items),
+            *detect_tool_names(text),
+        ]
+    )
     thesis = _first_non_empty(
         synthesis.summary,
         _first_sentence(result.transcript_text),
@@ -52,6 +65,9 @@ def build_content_intelligence(result: AnalysisResult) -> dict[str, Any]:
         "evidence": {
             "summary": thesis,
             "tools_or_products": tools,
+            "tool_evidence": evidence_items_to_dicts(
+                item for item in evidence_items if item.kind == "tool_or_product"
+            ),
             "claims": list(synthesis.claims or []),
             "actions": list(synthesis.action_items or []),
             "detected_platforms": platforms,
@@ -108,6 +124,15 @@ def render_content_markdown(result: AnalysisResult) -> str:
     lines.append(_paragraph(evidence["summary"]))
     lines.append("")
     _append_list(lines, "Ferramentas/produtos detectados", evidence["tools_or_products"])
+    _append_list(
+        lines,
+        "Ferramentas/produtos com proveniencia",
+        [
+            render_evidence_item(item)
+            for item in get_evidence_items(result)
+            if item.kind == "tool_or_product"
+        ],
+    )
     _append_list(lines, "Claims extraidos", evidence["claims"])
     _append_list(lines, "CTAs e acoes detectadas", evidence["cta_signals"] or evidence["actions"])
     _append_list(lines, "Plataformas citadas", evidence["detected_platforms"])
@@ -244,24 +269,7 @@ def _detect_platforms(text: str) -> list[str]:
 
 
 def _detect_tools(text: str) -> list[str]:
-    tools = {
-        "Claude": r"\bclaude\b|cloud code",
-        "Notion": r"\bnotion\b",
-        "Instagram": r"\binstagram\b",
-        "TikTok": r"\btiktok\b",
-        "YouTube": r"\byoutube\b",
-        "Python": r"\bpython\b",
-        "Playwright": r"\bplaywright\b",
-        "Cypress": r"\bcypress\b",
-        "Selenium": r"\bselenium\b",
-        "Appium": r"\bappium\b",
-        "Robot": r"\brobot\b",
-        "Azure DevOps": r"\bazure\s+devops\b",
-        "Jira": r"\bjira\b",
-        "Trello": r"\btrello\b",
-        "Qase": r"\bqase\b",
-    }
-    return [name for name, pattern in tools.items() if re.search(pattern, text, re.I)]
+    return detect_tool_names(text)
 
 
 def _extract_caption_items(description: str) -> list[dict[str, str]]:

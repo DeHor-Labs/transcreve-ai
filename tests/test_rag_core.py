@@ -22,6 +22,7 @@ def _make_analysis(
     chapters: list | None = None,
     entities: list | None = None,
     transcript: str = "",
+    evidence_items: list | None = None,
     title: str = "Video Teste",
     source_url: str = "https://example.com/video",
 ) -> dict:
@@ -32,6 +33,7 @@ def _make_analysis(
             "chapters": chapters or [],
             "entities": entities or [],
         },
+        "evidence_items": evidence_items or [],
         "transcript_text": transcript,
     }
 
@@ -102,6 +104,83 @@ class TestChunkDossier(unittest.TestCase):
         from video_kb.embeddings.chunker import chunk_dossier
 
         analysis = _make_analysis(transcript="Texto breve do video.")
+        chunks = chunk_dossier(analysis, "run-001")
+        transcript_chunks = [c for c in chunks if c.chunk_type == "transcript"]
+        self.assertEqual(len(transcript_chunks), 1)
+
+    def test_evidence_items_geram_chunks(self) -> None:
+        from video_kb.embeddings.chunker import chunk_dossier
+
+        analysis = _make_analysis(
+            transcript="Texto breve do video.",
+            evidence_items=[
+                {
+                    "kind": "tool_or_product",
+                    "value": "Playwright",
+                    "confidence": "high",
+                    "supports": [
+                        {
+                            "signal": "ocr",
+                            "confidence": "high",
+                            "timestamp": 12.34,
+                            "frame_path": "frames/frame-012.png",
+                            "excerpt": "Playwright aparece no canto inferior.",
+                        }
+                    ],
+                }
+            ],
+        )
+        chunks = chunk_dossier(analysis, "run-001")
+        evidence_chunks = [c for c in chunks if c.chunk_type == "evidence"]
+        self.assertEqual(len(evidence_chunks), 1)
+        self.assertIn("valor: Playwright", evidence_chunks[0].chunk_text)
+        self.assertIn("confianca_da_deteccao: high", evidence_chunks[0].chunk_text)
+        self.assertIn("supports:", evidence_chunks[0].chunk_text)
+        self.assertIn("signal=ocr", evidence_chunks[0].chunk_text)
+        self.assertIn("support_confidence=high", evidence_chunks[0].chunk_text)
+        self.assertIn("frame_path=frames/frame-012.png", evidence_chunks[0].chunk_text)
+
+    def test_entity_chunk_prefere_evidence_items_a_tools_genericos(self) -> None:
+        from video_kb.embeddings.chunker import chunk_dossier
+
+        analysis = _make_analysis(
+            evidence_items=[
+                {
+                    "kind": "tool_or_product",
+                    "value": "Playwright",
+                    "confidence": "high",
+                    "supports": [{"signal": "ocr", "confidence": "high"}],
+                }
+            ],
+        )
+        analysis["synthesis"]["tools_or_products"] = ["Ferramentas de automacao"]
+
+        chunks = chunk_dossier(analysis, "run-001")
+        entity_chunk = next(c for c in chunks if c.chunk_type == "entity")
+
+        self.assertIn("Playwright", entity_chunk.chunk_text)
+        self.assertNotIn("Ferramentas de automacao", entity_chunk.chunk_text)
+
+    def test_transcript_curto_continua_gerando_um_chunk_com_evidence(self) -> None:
+        from video_kb.embeddings.chunker import chunk_dossier
+
+        analysis = _make_analysis(
+            transcript="Texto breve do video.",
+            evidence_items=[
+                {
+                    "kind": "tool_or_product",
+                    "value": "Playwright",
+                    "confidence": "high",
+                    "supports": [
+                        {
+                            "signal": "ocr",
+                            "confidence": "high",
+                            "timestamp": 12.34,
+                        }
+                    ],
+                }
+            ],
+        )
         chunks = chunk_dossier(analysis, "run-001")
         transcript_chunks = [c for c in chunks if c.chunk_type == "transcript"]
         self.assertEqual(len(transcript_chunks), 1)
@@ -662,6 +741,34 @@ class TestAskFunction(unittest.TestCase):
             "Nao diga que um projeto especifico aparece no video se ele nao estiver nos trechos",
             normalized_prompt,
         )
+        self.assertIn("nao como risco tecnico da ferramenta", normalized_prompt)
+
+    def test_prompt_remove_confianca_de_evidencia_do_contexto_llm(self) -> None:
+        from video_kb.embeddings.rag import _build_prompt
+        from video_kb.embeddings.store import SearchHit
+
+        prompt = _build_prompt(
+            "Quais riscos?",
+            [
+                SearchHit(
+                    run_id="run-qa",
+                    title="Video QA",
+                    source_url="https://example.com/video",
+                    chunk_type="evidence",
+                    excerpt=(
+                        "valor: Playwright | confianca_da_deteccao: medium | "
+                        "supports: signal=vision; support_confidence=medium; timestamp=4.0"
+                    ),
+                    score=0.9,
+                    chapter_start=None,
+                )
+            ],
+        )
+
+        self.assertIn("valor: Playwright", prompt)
+        self.assertIn("signal=vision", prompt)
+        self.assertNotIn("confianca_da_deteccao", prompt)
+        self.assertNotIn("support_confidence", prompt)
 
     def test_ask_result_tem_question(self) -> None:
         from video_kb.embeddings.rag import ask

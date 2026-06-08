@@ -14,6 +14,7 @@ from .ai import (
 from .content_intelligence import write_content_artifacts
 from .downloader import DownloadedMedia
 from .downloader import fetch_media_bundle as fetch_media
+from .evidence import build_evidence_items
 from .index import DuplicateRunError, RunIndex, resolve_index_path
 from .media import extract_audio, extract_frames, probe_duration
 from .models import AnalysisResult, FrameObservation, KnowledgeSynthesis
@@ -394,6 +395,7 @@ class VideoKnowledgePipeline:
 
         if not result.evidence_profile:
             result.evidence_profile = _build_evidence_profile(result, transcript_quality)
+        result.evidence_items = build_evidence_items(result)
 
         _emit("persist", "Salvando analysis.json e knowledge.md...")
         write_json(run_dir / "analysis.json", result.to_dict())

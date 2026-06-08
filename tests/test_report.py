@@ -111,6 +111,34 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Fala/transcricao: descartada por baixa utilidade", markdown)
         self.assertIn("Visual/OCR: 1 frames, 1 com OCR, 1 com analise visual", markdown)
 
+    def test_render_markdown_includes_tool_provenance(self):
+        result = AnalysisResult(
+            run_id="run-tools",
+            created_at="2026-06-01T00:00:00Z",
+            source="local.mp4",
+            workdir="/tmp/run",
+            media_path="source.mp4",
+            audio_path="",
+            metadata=SourceMetadata(source="local.mp4", title="QA Tools"),
+            frames=[
+                FrameObservation(
+                    timestamp=2,
+                    image_path="frames/qa.jpg",
+                    ocr_text="Playwright - Cypress - Selenium",
+                    visual_note="Tela lista Playwright e Cypress como ferramentas.",
+                )
+            ],
+            synthesis=KnowledgeSynthesis(summary="Video visual sobre QA."),
+        )
+
+        markdown = render_markdown(result)
+
+        self.assertIn("## Ferramentas e produtos", markdown)
+        self.assertIn("- Playwright", markdown)
+        self.assertIn("## Ferramentas com proveniencia", markdown)
+        self.assertIn("Playwright: confianca alta", markdown)
+        self.assertIn("OCR em 00:02", markdown)
+
     def test_render_markdown_adapts_to_carousel(self):
         result = AnalysisResult(
             run_id="run-carousel",

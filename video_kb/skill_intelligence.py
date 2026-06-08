@@ -5,6 +5,13 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .evidence import (
+    detect_tool_names,
+    evidence_items_to_dicts,
+    get_evidence_items,
+    render_evidence_item,
+    tool_names_from_evidence,
+)
 from .models import AnalysisResult
 from .utils import compact_text, format_timestamp, slugify
 
@@ -14,7 +21,13 @@ def build_skill_intelligence(result: AnalysisResult) -> dict[str, Any]:
     text = _joined_text(result)
     name = _skill_name(result)
     summary = _summary(result)
-    tools = _unique([*list(result.synthesis.tools_or_products or []), *_detect_tools(text)])
+    evidence_items = get_evidence_items(result)
+    tools = _unique(
+        [
+            *tool_names_from_evidence(evidence_items),
+            *detect_tool_names(text),
+        ]
+    )
     triggers = _triggers(text, result)
     steps = _workflow_steps(text, result)
     prompts = _prompt_templates(text, result)
@@ -29,6 +42,9 @@ def build_skill_intelligence(result: AnalysisResult) -> dict[str, Any]:
         "evidence": {
             "summary": summary,
             "tools_or_products": tools,
+            "tool_evidence": evidence_items_to_dicts(
+                item for item in evidence_items if item.kind == "tool_or_product"
+            ),
             "claims": list(result.synthesis.claims or []),
             "actions": list(result.synthesis.action_items or []),
             "questions": list(result.synthesis.questions or []),
@@ -73,6 +89,15 @@ def render_skill_markdown(result: AnalysisResult) -> str:
     lines.append(evidence["summary"])
     lines.append("")
     _append_list(lines, "Ferramentas/produtos", evidence["tools_or_products"])
+    _append_list(
+        lines,
+        "Ferramentas/produtos com proveniencia",
+        [
+            render_evidence_item(item)
+            for item in get_evidence_items(result)
+            if item.kind == "tool_or_product"
+        ],
+    )
     _append_list(lines, "Claims", evidence["claims"])
     _append_list(lines, "Acoes extraidas", evidence["actions"])
 
@@ -152,7 +177,12 @@ def _triggers(text: str, result: AnalysisResult) -> list[str]:
         triggers.append("O video mostrar organizacao de conhecimento em database ou Notion.")
     if "hook" in lower or "cta" in lower or "reels" in lower:
         triggers.append("O objetivo for converter referencia em conteudo publicavel.")
-    tools = _unique([*list(result.synthesis.tools_or_products or []), *_detect_tools(text)])
+    tools = _unique(
+        [
+            *tool_names_from_evidence(get_evidence_items(result)),
+            *detect_tool_names(text),
+        ]
+    )
     if tools:
         tools_text = ", ".join(tools[:6])
         triggers.append("Ferramentas detectadas: " + tools_text)
@@ -192,6 +222,7 @@ def _output_contract(text: str) -> list[str]:
         "Ferramentas/produtos citados",
         "Passos ou workflow",
         "Artefatos gerados e paths",
+        "Proveniencia e confianca por ferramenta/produto",
         "Limites e riscos",
     ]
     lower = text.lower()
@@ -252,24 +283,7 @@ def _safety_notes(text: str) -> list[str]:
 
 
 def _detect_tools(text: str) -> list[str]:
-    tools = {
-        "Claude": r"\bclaude\b|cloud code",
-        "Notion": r"\bnotion\b",
-        "Instagram": r"\binstagram\b",
-        "TikTok": r"\btiktok\b",
-        "YouTube": r"\byoutube\b",
-        "Python": r"\bpython\b",
-        "Playwright": r"\bplaywright\b",
-        "Cypress": r"\bcypress\b",
-        "Selenium": r"\bselenium\b",
-        "Appium": r"\bappium\b",
-        "Robot": r"\brobot\b",
-        "Azure DevOps": r"\bazure\s+devops\b",
-        "Jira": r"\bjira\b",
-        "Trello": r"\btrello\b",
-        "Qase": r"\bqase\b",
-    }
-    return [name for name, pattern in tools.items() if re.search(pattern, text, re.I)]
+    return detect_tool_names(text)
 
 
 def _first_sentence(text: str) -> str:

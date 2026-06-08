@@ -19,7 +19,7 @@ class EmbeddingChunk:
     chunk_id: str  # "{run_id}:{chunk_index:04d}"
     run_id: str
     chunk_index: int
-    chunk_type: str  # "summary" | "chapter" | "entity" | "transcript"
+    chunk_type: str  # "summary" | "chapter" | "entity" | "evidence" | "transcript"
     chunk_text: str
     excerpt: str  # primeiros 200 chars de chunk_text
     source_title: str
@@ -104,22 +104,27 @@ def chunk_dossier(
     # 3. Entities
     # ------------------------------------------------------------------
     entities: list[str] = []
-    for key in ("entities", "tools_or_products"):
-        raw = synthesis.get(key) or []
-        for item in raw:
-            if isinstance(item, str):
-                entities.append(item.strip())
-            elif isinstance(item, dict):
-                name = item.get("name") or item.get("title") or ""
-                if name:
-                    entities.append(str(name).strip())
+    _extend_entities(entities, synthesis.get("entities") or [])
+    evidence_tool_values = _evidence_tool_values(analysis.get("evidence_items") or [])
+    if evidence_tool_values:
+        entities.extend(evidence_tool_values)
+    else:
+        _extend_entities(entities, synthesis.get("tools_or_products") or [])
 
     entity_text = ", ".join(e for e in entities if e)
     if entity_text:
         chunks.append(_make_chunk(entity_text, "entity"))
 
     # ------------------------------------------------------------------
-    # 4. Transcript (janelas deslizantes por fronteira de palavra)
+    # 4. Evidencias (ferramentas/produtos e suas provas)
+    # ------------------------------------------------------------------
+    for item in analysis.get("evidence_items") or []:
+        evidence_chunk = _build_evidence_chunk(item)
+        if evidence_chunk:
+            chunks.append(_make_chunk(evidence_chunk, "evidence"))
+
+    # ------------------------------------------------------------------
+    # 5. Transcript (janelas deslizantes por fronteira de palavra)
     # ------------------------------------------------------------------
     transcript = (analysis.get("transcript_text") or "").strip()
     if transcript:
@@ -149,6 +154,89 @@ def chunk_dossier(
             start = next_start
 
     return chunks
+
+
+def _build_evidence_chunk(item: Any) -> str:
+    if not isinstance(item, dict):
+        return ""
+
+    kind = str(item.get("kind") or "").strip()
+    if kind and kind != "tool_or_product":
+        return ""
+
+    value = str(item.get("value") or "").strip()
+    if not value:
+        return ""
+
+    confidence = str(item.get("confidence") or "desconhecida").strip()
+    chunk_lines = [f"valor: {value}", f"confianca_da_deteccao: {confidence}"]
+
+    supports = item.get("supports") or []
+    if not isinstance(supports, list):
+        supports = [supports]
+
+    support_lines: list[str] = []
+    for support in supports:
+        if not isinstance(support, dict):
+            continue
+        signal = str(support.get("signal") or "").strip()
+        support_confidence = str(support.get("confidence") or "").strip()
+        timestamp = support.get("timestamp")
+        frame_path = str(support.get("frame_path") or "").strip()
+        excerpt = str(support.get("excerpt") or "").strip()
+
+        if not any((signal, support_confidence, timestamp is not None, frame_path, excerpt)):
+            continue
+
+        bits = []
+        if signal:
+            bits.append(f"signal={signal}")
+        if support_confidence:
+            bits.append(f"support_confidence={support_confidence}")
+        if timestamp is not None:
+            parsed_timestamp = _coerce_finite_float(timestamp)
+            if parsed_timestamp is not None:
+                bits.append(f"timestamp={parsed_timestamp}")
+        if frame_path:
+            bits.append(f"frame_path={frame_path}")
+        if excerpt:
+            bits.append(f"excerpt={excerpt}")
+        support_lines.append("; ".join(bits))
+
+    if support_lines:
+        chunk_lines.append("supports: " + " | ".join(support_lines))
+
+    return " | ".join(chunk_lines)
+
+
+def _extend_entities(entities: list[str], raw: Any) -> None:
+    if not isinstance(raw, list):
+        raw = [raw]
+    for item in raw:
+        if isinstance(item, str):
+            entities.append(item.strip())
+        elif isinstance(item, dict):
+            name = item.get("name") or item.get("title") or ""
+            if name:
+                entities.append(str(name).strip())
+
+
+def _evidence_tool_values(items: Any) -> list[str]:
+    if not isinstance(items, list):
+        return []
+    values: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("kind") or "") != "tool_or_product":
+            continue
+        value = str(item.get("value") or "").strip()
+        key = value.lower()
+        if value and key not in seen:
+            seen.add(key)
+            values.append(value)
+    return values
 
 
 def _coerce_finite_float(value: Any) -> float | None:
