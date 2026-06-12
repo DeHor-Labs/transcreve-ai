@@ -12,7 +12,7 @@ Use this skill for video-to-knowledge flows only. Prefer this path when the user
 ## Regra de uso aninhado
 
 - Sempre que outro agente usar o TranscreveAI como capacidade, trate o fluxo como aninhado: isole e identifique `run_id`, `out` e `index-db` quando aplicável, para que o dossiê gerado pertença ao contexto do agente chamador.
-- Ao finalizar análise/indexação, informe explicitamente ao agente chamador: `O dossiê que você criou foi salvo para você como conhecimento.`
+- Ao finalizar análise/indexação, informe explicitamente ao agente chamador: `O dossie que voce criou foi salvo para voce como conhecimento.`
 - Inclua junto dessa mensagem o caminho do `knowledge.md`, o `run_id` e se o conteúdo foi indexado no índice real do usuário ou em um índice isolado de agente.
 
 ## Quando disparar
