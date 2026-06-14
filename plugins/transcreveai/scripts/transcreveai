@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+tool_name="transcreveai"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+self_path="$script_dir/$(basename "${BASH_SOURCE[0]}")"
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+find_python() {
+  if [ -n "${TRANSCREVEAI_PYTHON:-}" ]; then
+    candidates=("$TRANSCREVEAI_PYTHON")
+  else
+    candidates=(python3.14 python3.13 python3.12 python3.11 python3.10 python3)
+  fi
+
+  for candidate in "${candidates[@]}"; do
+    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
+      command -v "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+if command -v "$tool_name" >/dev/null 2>&1; then
+  resolved="$(command -v "$tool_name")"
+  if [ "$resolved" != "$self_path" ]; then
+    exec "$resolved" "$@"
+  fi
+fi
+
+repo="${TRANSCREVEAI_REPO:-}"
+if [ -n "$repo" ]; then
+  if [ -x "$repo/.venv/bin/$tool_name" ]; then
+    exec "$repo/.venv/bin/$tool_name" "$@"
+  fi
+  if [ -d "$repo/video_kb" ]; then
+    cd "$repo"
+    python_bin="$(find_python)" || {
+      echo "TranscreveAI requires Python 3.10+. Set TRANSCREVEAI_PYTHON to a compatible interpreter." >&2
+      exit 127
+    }
+    exec "$python_bin" -m video_kb "$@"
+  fi
+fi
+
+cache_root="${TRANSCREVEAI_PLUGIN_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/transcreveai-codex-plugin}"
+venv="$cache_root/venv"
+install_spec="${TRANSCREVEAI_INSTALL_SPEC:-transcreve-ai[mcp,rag] @ git+https://github.com/DeHor-Labs/transcreve-ai.git@7490586e86b57eefae377dc6839e9476f89ffd8d}"
+marker="$cache_root/install-spec.txt"
+
+if [ "${TRANSCREVEAI_PLUGIN_NO_BOOTSTRAP:-}" = "1" ]; then
+  echo "$tool_name was not found. Install transcreve-ai or unset TRANSCREVEAI_PLUGIN_NO_BOOTSTRAP to allow the plugin bootstrap." >&2
+  exit 127
+fi
+
+if [ ! -x "$venv/bin/$tool_name" ] || [ "$(cat "$marker" 2>/dev/null || true)" != "$install_spec" ]; then
+  mkdir -p "$cache_root"
+  python_bin="$(find_python)" || {
+    echo "TranscreveAI requires Python 3.10+. Install Python 3.10+ or set TRANSCREVEAI_PYTHON." >&2
+    exit 127
+  }
+  "$python_bin" - "$cache_root/bootstrap.lock" "$venv" "$install_spec" "$marker" "$tool_name" <<'PY'
+import fcntl
+import os
+import subprocess
+import sys
+
+lock_path, venv, install_spec, marker, tool_name = sys.argv[1:]
+lock_dir = os.path.dirname(lock_path)
+os.makedirs(lock_dir, exist_ok=True)
+
+with open(lock_path, "w", encoding="utf-8") as lock_file:
+    fcntl.flock(lock_file, fcntl.LOCK_EX)
+    try:
+        with open(marker, encoding="utf-8") as marker_file:
+            current_spec = marker_file.read()
+    except OSError:
+        current_spec = ""
+
+    tool_path = os.path.join(venv, "bin", tool_name)
+    if os.path.exists(tool_path) and current_spec == install_spec:
+        raise SystemExit(0)
+
+    subprocess.check_call([sys.executable, "-m", "venv", venv])
+    venv_python = os.path.join(venv, "bin", "python")
+    subprocess.check_call([venv_python, "-m", "pip", "install", "--upgrade", "pip"])
+    subprocess.check_call([venv_python, "-m", "pip", "install", "--upgrade", install_spec])
+
+    tmp_marker = f"{marker}.tmp"
+    with open(tmp_marker, "w", encoding="utf-8") as marker_file:
+        marker_file.write(install_spec)
+    os.replace(tmp_marker, marker)
+PY
+fi
+
+exec "$venv/bin/$tool_name" "$@"

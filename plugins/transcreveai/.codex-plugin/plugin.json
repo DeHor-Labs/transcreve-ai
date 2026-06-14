@@ -1,0 +1,41 @@
+{
+  "name": "transcreveai",
+  "version": "0.1.0",
+  "description": "Turn videos into evidence-backed knowledge dossiers for Codex.",
+  "author": {
+    "name": "Nikolas de Hor",
+    "url": "https://github.com/DeHor-Labs"
+  },
+  "homepage": "https://github.com/DeHor-Labs/transcreve-ai",
+  "repository": "https://github.com/DeHor-Labs/transcreve-ai",
+  "license": "MIT",
+  "keywords": [
+    "video",
+    "transcription",
+    "knowledge",
+    "rag",
+    "mcp",
+    "codex"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "TranscreveAI",
+    "shortDescription": "Analyze videos and save them as Codex knowledge.",
+    "longDescription": "TranscreveAI lets Codex probe video sources, create multimodal dossiers, index runs for retrieval, and answer questions grounded in generated artifacts.",
+    "developerName": "Nikolas de Hor",
+    "category": "Productivity",
+    "capabilities": [
+      "MCP",
+      "CLI",
+      "Video analysis",
+      "Knowledge retrieval"
+    ],
+    "brandColor": "#2563EB",
+    "defaultPrompt": [
+      "Analyze this video with TranscreveAI.",
+      "Turn these reels into reusable knowledge.",
+      "Ask my TranscreveAI runs for evidence."
+    ]
+  }
+}
