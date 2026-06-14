@@ -1,0 +1,20 @@
+{
+  "name": "transcreveai",
+  "interface": {
+    "displayName": "TranscreveAI"
+  },
+  "plugins": [
+    {
+      "name": "transcreveai",
+      "source": {
+        "source": "local",
+        "path": "./plugins/transcreveai"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

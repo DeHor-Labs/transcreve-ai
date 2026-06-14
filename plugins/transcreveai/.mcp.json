@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "transcreveai": {
+      "cwd": ".",
+      "command": "bash",
+      "args": [
+        "./scripts/transcreveai-mcp",
+        "--transport",
+        "stdio"
+      ]
+    }
+  }
+}
