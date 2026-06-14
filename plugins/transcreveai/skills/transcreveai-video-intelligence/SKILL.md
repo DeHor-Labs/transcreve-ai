@@ -21,7 +21,7 @@ Use this skill when the user sends a video URL/file or asks Codex to extract, su
 - MCP server command for local registration:
   - `bash ./scripts/transcreveai-mcp --transport stdio` from the installed plugin root.
 - The plugin wrappers add `/opt/homebrew/bin` and `/usr/local/bin` to PATH so Homebrew FFmpeg/Tesseract installs are visible to Codex-launched processes.
-- If TranscreveAI is not installed globally, the wrappers create a venv under `~/.cache/transcreveai-codex-plugin` and install `transcreve-ai[mcp,rag]` from `https://github.com/DeHor-Labs/transcreve-ai.git`.
+- If TranscreveAI is not installed globally, the wrappers create a venv under `~/.cache/transcreveai-codex-plugin` and install `transcreve-ai[mcp,rag]` from pinned commit `7490586e86b57eefae377dc6839e9476f89ffd8d` of `https://github.com/DeHor-Labs/transcreve-ai.git`.
 
 ## Required Nested Handoff
 
