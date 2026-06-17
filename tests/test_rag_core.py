@@ -529,6 +529,103 @@ class TestEmbeddingStoreSearch(unittest.TestCase):
             self.assertEqual(hits, [])
 
 
+class TestSearchDimMismatchResiliencia(unittest.TestCase):
+    """Busca em base com providers de dimensoes diferentes nao deve estourar."""
+
+    def _index_run_com_dim(self, db: Path, run_id: str, dim: int) -> None:
+        from video_kb.embeddings.rag import index_run
+
+        index_run(
+            run_id=run_id,
+            analysis=_make_analysis(
+                summary=f"Resumo do {run_id}.",
+                entities=["WhatsApp", "Evolution API"],
+                transcript=f"Transcricao do {run_id} sobre Coexistence.",
+            ),
+            provider=_make_mock_provider(dim=dim),
+            provider_name="mock",
+            model_name=f"mock-{dim}",
+            db_path=db,
+        )
+
+    def test_busca_global_com_dims_mistas_nao_estoura(self) -> None:
+        from video_kb.embeddings.rag import search
+
+        db = _tmp_db()
+        # Run antigo indexado com provider "local" (384-dim, simulado com dim=4)
+        self._index_run_com_dim(db, "run-local-384", dim=4)
+        # Run novo indexado com provider "openai" (1536-dim, simulado com dim=8)
+        self._index_run_com_dim(db, "run-openai-1536", dim=8)
+
+        provider_query = _make_mock_provider(dim=8)
+        # Busca GLOBAL (sem run_ids) deve recuperar so os compativeis, sem ValueError.
+        hits = search("Coexistence WhatsApp Evolution API", provider_query, db_path=db, top_k=10)
+
+        self.assertIsInstance(hits, list)
+        self.assertGreater(len(hits), 0)
+        run_ids_nos_hits = {h.run_id for h in hits}
+        self.assertIn("run-openai-1536", run_ids_nos_hits)
+        self.assertNotIn("run-local-384", run_ids_nos_hits)
+
+    def test_busca_emite_warning_ao_pular_chunks(self) -> None:
+        from video_kb.embeddings.rag import search
+
+        db = _tmp_db()
+        self._index_run_com_dim(db, "run-local-384", dim=4)
+        self._index_run_com_dim(db, "run-openai-1536", dim=8)
+
+        provider_query = _make_mock_provider(dim=8)
+        with self.assertLogs("video_kb.embeddings.store", level="WARNING") as cm:
+            search("qualquer consulta", provider_query, db_path=db, top_k=10)
+
+        log_text = "\n".join(cm.output)
+        self.assertIn("dimensao incompativel", log_text)
+        self.assertIn("dim=4", log_text)
+
+    def test_run_id_compativel_continua_intacto(self) -> None:
+        from video_kb.embeddings.rag import search
+
+        db = _tmp_db()
+        self._index_run_com_dim(db, "run-local-384", dim=4)
+        self._index_run_com_dim(db, "run-openai-1536", dim=8)
+
+        # Busca restrita ao run compativel (dim=8) deve funcionar normalmente.
+        provider_query = _make_mock_provider(dim=8)
+        hits = search(
+            "Coexistence",
+            provider_query,
+            db_path=db,
+            top_k=10,
+            run_ids=["run-openai-1536"],
+        )
+        self.assertGreater(len(hits), 0)
+        self.assertEqual({h.run_id for h in hits}, {"run-openai-1536"})
+
+    def test_metadado_dim_incorreto_nao_descarta_vetor_compativel(self) -> None:
+        """Se a coluna 'dim' estiver errada mas o vetor real for compativel,
+        o chunk NAO deve ser descartado (decisao pela dimensao real do vetor)."""
+        import sqlite3
+
+        from video_kb.embeddings.rag import search
+
+        db = _tmp_db()
+        self._index_run_com_dim(db, "run-meta-errado", dim=8)
+
+        # Corrompe o metadado 'dim' (poe valor errado) sem alterar o vetor real,
+        # simulando um indice antigo/inconsistente.
+        conn = sqlite3.connect(str(db))
+        conn.execute("UPDATE embeddings SET dim = 999 WHERE run_id = ?", ("run-meta-errado",))
+        conn.commit()
+        conn.close()
+
+        provider_query = _make_mock_provider(dim=8)
+        hits = search("Coexistence", provider_query, db_path=db, top_k=10)
+
+        # Vetor real e dim=8 = query dim=8, entao deve aparecer mesmo com metadado mentindo.
+        self.assertGreater(len(hits), 0)
+        self.assertIn("run-meta-errado", {h.run_id for h in hits})
+
+
 # ---------------------------------------------------------------------------
 # 4. Provider sem embed levanta erro claro
 # ---------------------------------------------------------------------------
