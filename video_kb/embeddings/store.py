@@ -8,12 +8,15 @@ Busca cosine em Python com numpy (importado lazy dentro de search()).
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .chunker import EmbeddingChunk
+
+_logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -266,14 +269,45 @@ class EmbeddingStore:
         if q_norm == 0:
             return []
 
+        query_dim = int(q.shape[0])
+
         scored: list[tuple[float, sqlite3.Row]] = []
+        skipped_dims: dict[int, int] = {}
         for row in rows:
+            # Filtra por dimensao compativel ANTES de parsear o vetor.
+            # A base pode conter embeddings de providers distintos (ex: local
+            # 384-dim vs OpenAI 1536-dim) e comparar vetores de dimensoes
+            # diferentes estouraria com "shapes not aligned" no np.dot.
+            row_dim = row["dim"]
+            if row_dim is not None and int(row_dim) != query_dim:
+                skipped_dims[int(row_dim)] = skipped_dims.get(int(row_dim), 0) + 1
+                continue
             vec = np.array(json.loads(row["embedding"]), dtype=np.float32)
+            # Defesa extra: se o metadado 'dim' estiver ausente/incorreto,
+            # confere a dimensao real do vetor antes de comparar.
+            if int(vec.shape[0]) != query_dim:
+                skipped_dims[int(vec.shape[0])] = skipped_dims.get(int(vec.shape[0]), 0) + 1
+                continue
             v_norm = np.linalg.norm(vec)
             if v_norm == 0:
                 continue
             score = float(np.dot(q, vec) / (q_norm * v_norm))
             scored.append((score, row))
+
+        if skipped_dims:
+            total_skipped = sum(skipped_dims.values())
+            detalhe = ", ".join(
+                f"{count} chunk(s) com dim={dim}" for dim, count in sorted(skipped_dims.items())
+            )
+            _logger.warning(
+                "search: %d chunk(s) pulado(s) por dimensao incompativel com a query "
+                "(query dim=%d; %s). Provavel mistura de providers de embedding na mesma "
+                "base. Considere reindexar com um provider unico "
+                "('transcreveai index <run_id> --force').",
+                total_skipped,
+                query_dim,
+                detalhe,
+            )
 
         scored.sort(key=lambda t: t[0], reverse=True)
 
