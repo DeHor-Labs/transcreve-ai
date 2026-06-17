@@ -274,17 +274,17 @@ class EmbeddingStore:
         scored: list[tuple[float, sqlite3.Row]] = []
         skipped_dims: dict[int, int] = {}
         for row in rows:
-            # Filtra por dimensao compativel ANTES de parsear o vetor.
+            # Filtra por dimensao compativel com a da query antes do np.dot.
             # A base pode conter embeddings de providers distintos (ex: local
             # 384-dim vs OpenAI 1536-dim) e comparar vetores de dimensoes
             # diferentes estouraria com "shapes not aligned" no np.dot.
-            row_dim = row["dim"]
-            if row_dim is not None and int(row_dim) != query_dim:
-                skipped_dims[int(row_dim)] = skipped_dims.get(int(row_dim), 0) + 1
-                continue
+            #
+            # A DECISAO de pular e sempre tomada pela dimensao REAL do vetor
+            # (vec.shape[0]), nunca apenas pelo metadado 'dim'. Assim um vetor
+            # compativel nao e descartado quando 'dim' estiver incorreto ou
+            # desatualizado (evita falso negativo e perda de recall), e um vetor
+            # incompativel nunca chega ao np.dot mesmo se o metadado mentir.
             vec = np.array(json.loads(row["embedding"]), dtype=np.float32)
-            # Defesa extra: se o metadado 'dim' estiver ausente/incorreto,
-            # confere a dimensao real do vetor antes de comparar.
             if int(vec.shape[0]) != query_dim:
                 skipped_dims[int(vec.shape[0])] = skipped_dims.get(int(vec.shape[0]), 0) + 1
                 continue

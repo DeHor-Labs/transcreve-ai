@@ -601,6 +601,30 @@ class TestSearchDimMismatchResiliencia(unittest.TestCase):
         self.assertGreater(len(hits), 0)
         self.assertEqual({h.run_id for h in hits}, {"run-openai-1536"})
 
+    def test_metadado_dim_incorreto_nao_descarta_vetor_compativel(self) -> None:
+        """Se a coluna 'dim' estiver errada mas o vetor real for compativel,
+        o chunk NAO deve ser descartado (decisao pela dimensao real do vetor)."""
+        import sqlite3
+
+        from video_kb.embeddings.rag import search
+
+        db = _tmp_db()
+        self._index_run_com_dim(db, "run-meta-errado", dim=8)
+
+        # Corrompe o metadado 'dim' (poe valor errado) sem alterar o vetor real,
+        # simulando um indice antigo/inconsistente.
+        conn = sqlite3.connect(str(db))
+        conn.execute("UPDATE embeddings SET dim = 999 WHERE run_id = ?", ("run-meta-errado",))
+        conn.commit()
+        conn.close()
+
+        provider_query = _make_mock_provider(dim=8)
+        hits = search("Coexistence", provider_query, db_path=db, top_k=10)
+
+        # Vetor real e dim=8 = query dim=8, entao deve aparecer mesmo com metadado mentindo.
+        self.assertGreater(len(hits), 0)
+        self.assertIn("run-meta-errado", {h.run_id for h in hits})
+
 
 # ---------------------------------------------------------------------------
 # 4. Provider sem embed levanta erro claro
