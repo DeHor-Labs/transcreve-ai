@@ -11,11 +11,18 @@ Use this skill when an agent, IDE assistant, or automated workflow invokes Trans
 
 - Treat the execution as a nested workflow.
 - Keep `run_id`, `out`, and `index-db` identifiable for the calling agent.
-- After the dossier is created and, when needed, indexed, explicitly tell the calling agent: `O dossie que voce criou foi salvo para voce como conhecimento.`
+- Use temporary retention by default when the caller only needs extraction, summary, or an answer from YouTube, Reels, TikTok, local media, and similar sources.
+- Preserve artifacts or index in the user's real knowledge base only when the caller/user asks to save, index, audit later, or reuse the dossier.
+- If the dossier is preserved or indexed, explicitly tell the calling agent: `O dossie que voce criou foi salvo para voce como conhecimento.`
 - Include the path to `knowledge.md`, the `run_id`, and whether the knowledge was saved in the user's real index or in an isolated agent index.
+- If the run was temporary and cleaned up, do not claim it was saved; report the `run_id`, that the answer was based on generated artifacts, and that temporary files were removed.
 
 ## Safety Defaults
 
 - For smoke tests, demos, and automated validation, prefer `--index-db /tmp/...` and `--out /tmp/...`.
+- For temporary production-like agent runs, create a dedicated temp directory:
+  `TMP=$(mktemp -d "${TMPDIR:-/tmp}/transcreveai-agent.XXXXXX")`,
+  use `--index-db "$TMP/index.db"` and `--out "$TMP/runs"`, read the generated artifacts, then `rm -rf "$TMP"`.
+- If a temporary run used the real index, remove it with `transcreveai runs rm RUN_ID --force` before deleting files.
 - Base answers on generated artifacts (`knowledge.md`, `analysis.json`, and template files when present), not on a manual parallel dossier.
 - Do not expose API keys, cookies, or complete sensitive URLs in logs or responses.
