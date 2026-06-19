@@ -1,0 +1,10 @@
+{
+  "id": "transcreveai",
+  "name": "TranscreveAI",
+  "version": "0.1.2",
+  "minAppVersion": "1.5.0",
+  "description": "Transcreve videos and audio files from your vault with the local TranscreveAI CLI.",
+  "author": "DeHor Labs",
+  "authorUrl": "https://github.com/DeHor-Labs/transcreve-ai",
+  "isDesktopOnly": true
+}

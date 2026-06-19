@@ -28,9 +28,12 @@ Use this skill when the user sends a video URL/file or asks Codex to extract, su
 Whenever TranscreveAI is used as a nested capability for another agent or workflow:
 
 - Keep `run_id`, `out`, and `index-db` identifiable for the caller.
-- After the dossier is created and, when needed, indexed, explicitly say:
+- Use temporary retention by default when the caller only needs extraction, summary, or an answer from YouTube, Reels, TikTok, local media, and similar sources.
+- Preserve artifacts or index in the user's real knowledge base only when the caller/user asks to save, index, audit later, or reuse the dossier.
+- If the dossier is preserved or indexed, explicitly say:
   `O dossie que voce criou foi salvo para voce como conhecimento.`
 - Include the path to `knowledge.md`, the `run_id`, and whether the knowledge was saved in the user's real index or in an isolated agent index.
+- If the run was temporary and cleaned up, do not claim it was saved; report the `run_id`, that the answer was based on generated artifacts, and that temporary files were removed.
 
 ## Safe Defaults
 
@@ -40,6 +43,10 @@ Whenever TranscreveAI is used as a nested capability for another agent or workfl
   - `--ai off`
   - `--provider local`
   - `--force`
+- For temporary production-like agent runs, create a dedicated temp directory:
+  `TMP=$(mktemp -d "${TMPDIR:-/tmp}/transcreveai-agent.XXXXXX")`,
+  use `--index-db "$TMP/index.db"` and `--out "$TMP/runs"`, read the generated artifacts, then `rm -rf "$TMP"`.
+- If a temporary run used the real index, remove it with `transcreveai runs rm RUN_ID --force` before deleting files.
 - Do not expose API keys, cookie contents, or complete sensitive URLs in logs or final answers.
 - Use `--cookies-browser chrome` only for user-owned browser state and only when needed for sources such as Instagram.
 - Base final answers on generated artifacts, especially `knowledge.md`, `analysis.json`, and template files. Do not create a parallel manual dossier and pretend it came from TranscreveAI.
@@ -58,7 +65,8 @@ Read `kind`, `adapter`, `requires_cookies`, and `notes`. If cookies are required
 2. Run the agent workflow:
 
 ```bash
-transcreveai agent run "SOURCE" --json
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/transcreveai-agent.XXXXXX")
+transcreveai --index-db "$TMP/index.db" agent run "SOURCE" --out "$TMP/runs" --json
 ```
 
 For an isolated no-cost smoke:
@@ -93,8 +101,9 @@ transcreveai ask "QUESTION" --run-id RUN_ID --top-k 8
 
 - Summarize what the video actually supports.
 - Separate evidence from inference when making product, business, or technical recommendations.
-- Cite artifact paths and the `run_id`.
+- Cite artifact paths only when the dossier is preserved. For temporary runs that are cleaned up, cite the `run_id` and cleanup status instead.
 - State limitations when transcript, OCR, visual context, or source access was weak.
+- Unless the user asked to preserve/index the dossier, remove the temp directory after reading the artifacts and mention that temporary files were removed.
 
 ## Batch Flow
 

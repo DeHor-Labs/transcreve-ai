@@ -12,8 +12,11 @@ Use this skill for video-to-knowledge flows only. Prefer this path when the user
 ## Regra de uso aninhado
 
 - Sempre que outro agente usar o TranscreveAI como capacidade, trate o fluxo como aninhado: isole e identifique `run_id`, `out` e `index-db` quando aplicável, para que o dossiê gerado pertença ao contexto do agente chamador.
-- Ao finalizar análise/indexação, informe explicitamente ao agente chamador: `O dossie que voce criou foi salvo para voce como conhecimento.`
+- Use **retenção temporária por padrão** quando o agente só precisa extrair, resumir ou responder a partir de YouTube, Reels, TikTok, Loom, arquivo local etc. Use `--out`/`--index-db` isolados, leia os artefatos, responda e limpe arquivos brutos ao final.
+- Use **retenção durável** somente quando o usuário pedir salvar, indexar, transformar em conhecimento consultável, auditar depois, ou reutilizar o dossiê.
+- Se o dossiê for preservado ou indexado, informe explicitamente ao agente chamador: `O dossie que voce criou foi salvo para voce como conhecimento.`
 - Inclua junto dessa mensagem o caminho do `knowledge.md`, o `run_id` e se o conteúdo foi indexado no índice real do usuário ou em um índice isolado de agente.
+- Se a execução foi temporária e limpa, não diga que o dossiê ficou salvo; informe o `run_id`, que a resposta foi baseada nos artefatos gerados, e que os temporários foram removidos.
 
 ## Quando disparar
 
@@ -37,6 +40,11 @@ Use this skill for video-to-knowledge flows only. Prefer this path when the user
 - Para smoke tests, demos ou execucoes automatizadas por agente, prefira um indice isolado:
   `transcreveai --index-db /tmp/transcreveai-agent.db agent run "<origem>" --out /tmp/transcreveai-agent --ai off --provider local --force --json`.
   Isso evita consultar ou bloquear o indice real do usuario e torna a prova repetivel.
+- Para execuções temporárias reais, use um diretório dedicado e descartável:
+  `TMP=$(mktemp -d "${TMPDIR:-/tmp}/transcreveai-agent.XXXXXX")`
+  `transcreveai --index-db "$TMP/index.db" agent run "<origem>" --out "$TMP/runs" --json`
+  Depois de ler `knowledge.md`, `analysis.json` e templates necessários, execute `rm -rf "$TMP"`.
+- Se a execução temporária tiver usado o índice real por engano, remova o run antes de apagar a pasta: `transcreveai runs rm RUN_ID --force`.
 - Se precisar controlar cada etapa, siga o fluxo manual abaixo.
 
 1. **Probe da origem**
@@ -98,6 +106,7 @@ Use this skill for video-to-knowledge flows only. Prefer this path when the user
 - `cookies-browser`/`cookies.txt` devem ser usados apenas com arquivos de origem do usuário, curtos no escopo e sem exportação adicional.
 - Evite logar URLs sensíveis completas; cite IDs e caminhos locais quando possível.
 - Se for necessário reter artefatos, sinalize onde estão gravados e como remover (`runs rm --purge`) quando apropriado.
+- Se não for necessário reter artefatos, limpe a pasta temporária ao final para não ocupar espaço no dispositivo.
 
 ## Exemplos
 
