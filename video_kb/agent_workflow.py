@@ -61,6 +61,7 @@ class AgentWorkflowResult:
     warnings: list[str] = field(default_factory=list)
     share_command: str = ""
     share_run_dir_command: str = ""
+    share_catalog_command: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -183,6 +184,7 @@ def _attach_share_commands(
         result.share_run_dir_command = _shell_command(
             ["transcreveai", "share", "--run-dir", result.workdir, "--json"]
         )
+    result.share_catalog_command = _shell_command(["transcreveai", "share", "--catalog", "--json"])
     return result
 
 

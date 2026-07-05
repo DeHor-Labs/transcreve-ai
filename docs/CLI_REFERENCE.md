@@ -87,9 +87,9 @@ transcreveai agent run "https://www.instagram.com/reel/..." \
 | `--force` | Reprocessa mesmo que a origem ja exista no indice | `false` |
 
 Se o probe retornar `unknown`, o comando imprime o resultado e encerra com codigo `1`.
-Quando o run completa, a saida JSON inclui `share_command` e
-`share_run_dir_command` para preservar o dossie depois, sem copiar artefatos
-automaticamente.
+Quando o run completa, a saida JSON inclui `share_command`,
+`share_run_dir_command` e `share_catalog_command` para preservar e redescobrir
+o dossie depois, sem copiar artefatos automaticamente.
 
 ---
 

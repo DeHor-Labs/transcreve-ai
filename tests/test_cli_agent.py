@@ -113,6 +113,10 @@ class TestCliAgentRun(unittest.TestCase):
             payload["share_run_dir_command"],
             f"transcreveai share --run-dir {workdir} --json",
         )
+        self.assertEqual(
+            payload["share_catalog_command"],
+            "transcreveai share --catalog --json",
+        )
 
     def test_share_json_outputs_shared_agent_package(self) -> None:
         from video_kb.index import RunIndex
