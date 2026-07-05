@@ -104,6 +104,7 @@ transcreveai analyze "https://www.instagram.com/reel/..." --ai auto --language p
 transcreveai index <run_id>
 transcreveai ask "quais ferramentas, passos e riscos aparecem no video?" --run-id <run_id>
 transcreveai share <run_id> --json
+transcreveai share --catalog --json
 ```
 
 Project artifacts:
@@ -120,7 +121,7 @@ transcreveai-mcp
 ```
 
 The MCP server exposes `sources_probe`, `analyze`, `agent_run`, `index`, `ask`,
-`agent_batch`, `runs_list`, `runs_show` and `share_run`. The default transport is
+`agent_batch`, `runs_list`, `runs_show`, `share_run` and `shared_catalog`. The default transport is
 `stdio`; use `transcreveai-mcp --transport streamable-http --port 8765` when a
 client expects an HTTP MCP endpoint.
 
@@ -641,6 +642,8 @@ The CLI is intentionally worker-friendly:
 4. `knowledge.md` is saved to Git, Obsidian, Notion, Drive or returned in chat.
 5. `transcreveai share <run_id>` writes a durable handoff packet and updates a
    share-root catalog for Codex, Claude Code or another agent to reuse later.
+6. `transcreveai share --catalog` or MCP `shared_catalog` lists those packets
+   without guessing filesystem paths.
 
 Future versions can wrap the same core with a web UI, background jobs and storage adapters.
 

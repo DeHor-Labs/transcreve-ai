@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from video_kb.index import RunIndex
-from video_kb.share import ShareRunError, share_run
+from video_kb.share import ShareRunError, share_run, shared_catalog
 
 
 class TestShareRun(unittest.TestCase):
@@ -77,6 +77,8 @@ class TestShareRun(unittest.TestCase):
             self.assertTrue(Path(payload["catalog_md"]).exists())
             catalog = json.loads(Path(payload["catalog_json"]).read_text(encoding="utf-8"))
             self.assertEqual(catalog["entries"][0]["run_id"], "run-001")
+            shared = shared_catalog(out_dir=tmp / "shared")
+            self.assertEqual(shared["entries"][0]["run_id"], "run-001")
             self.assertIn("O dossie", (share_dir / "handoff.md").read_text(encoding="utf-8"))
 
     def test_share_run_from_dir_does_not_claim_default_index(self) -> None:

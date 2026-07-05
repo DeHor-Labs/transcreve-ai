@@ -160,6 +160,7 @@ class TestMcpServer(unittest.TestCase):
                 out=str(tmp / "shared"),
                 index_db=str(index_db),
             )
+            catalog = mcp_server.mcp_shared_catalog(out=str(tmp / "shared"))
             share_dir = Path(payload["share_dir"])
             handoff_exists = (share_dir / "handoff.md").exists()
             manifest_exists = (share_dir / "manifest.json").exists()
@@ -167,6 +168,7 @@ class TestMcpServer(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertTrue(handoff_exists)
         self.assertTrue(manifest_exists)
+        self.assertEqual(catalog["entries"][0]["run_id"], "run-001")
 
     def test_share_run_accepts_run_dir_without_index(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -276,6 +278,7 @@ class TestMcpServer(unittest.TestCase):
         self.assertIn("agent_batch", tool_names)
         self.assertIn("ask", tool_names)
         self.assertIn("share_run", tool_names)
+        self.assertIn("shared_catalog", tool_names)
 
     def test_registered_tool_returns_structured_payload_when_mcp_installed(self) -> None:
         try:

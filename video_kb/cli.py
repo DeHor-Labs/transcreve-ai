@@ -338,6 +338,13 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         help="Diretorio de destino (default: ~/.transcreveai/shared-knowledge)",
     )
+    share_parser.add_argument(
+        "--catalog",
+        action="store_true",
+        default=False,
+        help="Lista o catalogo de conhecimento compartilhado",
+    )
+    share_parser.add_argument("--limit", type=int, default=20, help="Limite para --catalog")
     share_parser.add_argument("--json", dest="as_json", action="store_true", help="Saida JSON")
 
     # ------------------------------------------------------------------
@@ -1044,15 +1051,18 @@ def _is_within_cli_scope(raw_output_dir: str, scope_root: Path) -> bool:
 
 
 def _cmd_share(args: argparse.Namespace) -> None:
-    from .share import ShareRunError, share_run
+    from .share import ShareRunError, share_run, shared_catalog
 
     try:
-        payload = share_run(
-            run_id=args.run_id,
-            run_dir=args.run_dir,
-            out_dir=args.out,
-            index_db=getattr(args, "index_db", None),
-        )
+        if args.catalog:
+            payload = shared_catalog(out_dir=args.out, limit=args.limit)
+        else:
+            payload = share_run(
+                run_id=args.run_id,
+                run_dir=args.run_dir,
+                out_dir=args.out,
+                index_db=getattr(args, "index_db", None),
+            )
     except ShareRunError as exc:
         if args.as_json:
             print(
@@ -1081,6 +1091,12 @@ def _cmd_share(args: argparse.Namespace) -> None:
 
     if args.as_json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    if args.catalog:
+        print(f"Catalog: {payload['catalog_md']}")
+        for entry in payload["entries"]:
+            print(f"- {entry.get('run_id', '')}: {entry.get('handoff_md', '')}")
         return
 
     print(f"OK: {payload['share_dir']}")

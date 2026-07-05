@@ -15,6 +15,7 @@
 | `transcreveai runs show RUN_ID` | Exibe detalhes de um run |
 | `transcreveai runs rm RUN_ID` | Remove um run do indice |
 | `transcreveai share RUN_ID` | Empacota um run como handoff duravel para agentes |
+| `transcreveai share --catalog` | Lista pacotes de conhecimento compartilhado |
 | `transcreveai-mcp` | Inicia o servidor MCP opcional para agentes |
 
 ---
@@ -691,6 +692,7 @@ transcreveai share RUN_ID [opcoes]
 transcreveai share 20260601T060803Z-youtu-be-abc123
 transcreveai share 20260601T060803Z-youtu-be-abc123 --out ~/handoffs --json
 transcreveai share --run-dir outputs/20260601T060803Z-youtu-be-abc123 --json
+transcreveai share --catalog --json
 ```
 
 O pacote gerado e intencionalmente simples: `handoff.md` para leitura por

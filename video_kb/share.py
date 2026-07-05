@@ -90,6 +90,24 @@ def share_run(
     return manifest
 
 
+def shared_catalog(
+    *,
+    out_dir: str | Path | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    share_root = (Path(out_dir).expanduser() if out_dir else DEFAULT_SHARE_DIR).resolve()
+    catalog_json = share_root / "catalog.json"
+    catalog_md = share_root / "index.md"
+    entries = _read_catalog_entries(catalog_json)[: max(1, min(limit, 500))]
+    return {
+        "ok": True,
+        "share_root": str(share_root),
+        "catalog_json": str(catalog_json),
+        "catalog_md": str(catalog_md),
+        "entries": entries,
+    }
+
+
 def _resolve_run(
     *,
     run_id: str,

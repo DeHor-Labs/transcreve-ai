@@ -160,11 +160,23 @@ class TestCliAgentRun(unittest.TestCase):
             )
             payload = json.loads(out.strip() or "{}")
             manifest_exists = Path(payload["manifest_json"]).exists()
+            catalog_out, catalog_err, catalog_code = _run_cmd(
+                [
+                    "share",
+                    "--catalog",
+                    "--out",
+                    str(tmp / "shared"),
+                    "--json",
+                ]
+            )
+            catalog_payload = json.loads(catalog_out.strip() or "{}")
 
         self.assertEqual(code, 0, msg=err)
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["run_id"], "run-001")
         self.assertTrue(manifest_exists)
+        self.assertEqual(catalog_code, 0, msg=catalog_err)
+        self.assertEqual(catalog_payload["entries"][0]["run_id"], "run-001")
 
     def test_share_json_outputs_structured_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
