@@ -11,7 +11,7 @@ Em vez de perder contexto em transcrições, o fluxo entrega:
 
 Objetivo de demo: provar em 3 minutos que o mesmo conteúdo vira pergunta-resposta útil em menos esforço que assistir manualmente o vídeo inteiro.
 
-## Fluxo de demonstracao: `probe -> analyze -> read dossier -> ask`
+## Fluxo de demonstracao: `probe -> analyze -> read dossier -> share -> ask`
 
 > O probe oficial e `transcreveai sources probe`: ele nao baixa o video, apenas identifica a origem, adapter sugerido e avisos provaveis.
 
@@ -99,7 +99,17 @@ transcreveai --index-db /tmp/transcreveai-demo.db agent run ./demo.mp4 \
    sed -n "1,140p" "$RUN_DIR/knowledge.md"
    ```
 
-4. **ask**
+4. **share**
+   Criar um pacote duravel para outro agente retomar sem lembrar paths soltos.
+   ```bash
+   transcreveai share "$RUN_ID" --json
+   ```
+
+   O resultado grava `handoff.md`, `manifest.json`, `knowledge.md` e
+   `analysis.json` em `~/.transcreveai/shared-knowledge/<run_id>/` por padrao,
+   alem de atualizar `catalog.json` e `index.md` na raiz de compartilhamento.
+
+5. **ask**
    Indexar e consultar o índice.
    ```bash
    transcreveai index "$RUN_ID"

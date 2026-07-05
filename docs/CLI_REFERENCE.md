@@ -14,6 +14,7 @@
 | `transcreveai runs list` | Lista o historico de runs |
 | `transcreveai runs show RUN_ID` | Exibe detalhes de um run |
 | `transcreveai runs rm RUN_ID` | Remove um run do indice |
+| `transcreveai share RUN_ID` | Empacota um run como handoff duravel para agentes |
 | `transcreveai-mcp` | Inicia o servidor MCP opcional para agentes |
 
 ---
@@ -85,6 +86,9 @@ transcreveai agent run "https://www.instagram.com/reel/..." \
 | `--force` | Reprocessa mesmo que a origem ja exista no indice | `false` |
 
 Se o probe retornar `unknown`, o comando imprime o resultado e encerra com codigo `1`.
+Quando o run completa, a saida JSON inclui `share_command` e
+`share_run_dir_command` para preservar o dossie depois, sem copiar artefatos
+automaticamente.
 
 ---
 
@@ -201,6 +205,7 @@ Tools expostas:
 | `ask` | Consulta runs indexados, com `search_only` quando necessario |
 | `runs_list` | Lista runs do indice SQLite |
 | `runs_show` | Retorna detalhes de um run especifico |
+| `share_run` | Gera `handoff.md`, `manifest.json` e catalogo para um run local indexado |
 
 As tools capturam stdout/stderr do pipeline e devolvem esses logs no campo
 `logs`, para preservar o protocolo MCP quando o transporte e `stdio`.
@@ -659,6 +664,38 @@ transcreveai runs rm 20260601T060803Z-youtu-be-abc123 --purge --force
 ```
 
 ---
+
+## `transcreveai share`
+
+Empacota um run existente como conhecimento compartilhavel para agentes. O
+comando copia `knowledge.md`, `analysis.json` e templates gerados para um
+diretorio duravel, escreve `handoff.md` + `manifest.json`, sanitiza URLs
+sensiveis nos artefatos compartilhados e atualiza `catalog.json` + `index.md`
+na raiz de compartilhamento.
+
+```bash
+transcreveai share RUN_ID [opcoes]
+```
+
+### Opcoes
+
+| Flag | Descricao | Default |
+|---|---|---|
+| `--run-dir PATH` | Usa uma pasta de run contendo `analysis.json` e `knowledge.md` sem consultar o indice | - |
+| `--out DIR` | Diretorio de destino | `~/.transcreveai/shared-knowledge` |
+| `--json` | Saida JSON com paths do pacote | `false` |
+
+### Exemplos
+
+```bash
+transcreveai share 20260601T060803Z-youtu-be-abc123
+transcreveai share 20260601T060803Z-youtu-be-abc123 --out ~/handoffs --json
+transcreveai share --run-dir outputs/20260601T060803Z-youtu-be-abc123 --json
+```
+
+O pacote gerado e intencionalmente simples: `handoff.md` para leitura por
+Codex/Claude Code, `manifest.json` para automacoes, copias sanitizadas dos
+artefatos de evidencia e um catalogo raiz para descoberta posterior.
 
 ---
 

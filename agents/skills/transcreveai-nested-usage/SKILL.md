@@ -13,6 +13,7 @@ Use this skill when an agent, IDE assistant, or automated workflow invokes Trans
 - Keep `run_id`, `out`, and `index-db` identifiable for the calling agent.
 - Use temporary retention by default when the caller only needs extraction, summary, or an answer from YouTube, Reels, TikTok, local media, and similar sources.
 - Preserve artifacts or index in the user's real knowledge base only when the caller/user asks to save, index, audit later, or reuse the dossier.
+- When preservation is requested, run `transcreveai share RUN_ID --json` after analysis. If the run used an isolated index, pass the same `--index-db` or use `transcreveai share --run-dir "$RUN_DIR" --json`. The package contains `handoff.md`, `manifest.json`, `knowledge.md`, and `analysis.json`, and updates share-root `catalog.json`/`index.md`.
 - If the dossier is preserved or indexed, explicitly tell the calling agent: `O dossie que voce criou foi salvo para voce como conhecimento.`
 - Include the path to `knowledge.md`, the `run_id`, and whether the knowledge was saved in the user's real index or in an isolated agent index.
 - If the run was temporary and cleaned up, do not claim it was saved; report the `run_id`, that the answer was based on generated artifacts, and that temporary files were removed.

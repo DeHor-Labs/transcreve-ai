@@ -319,6 +319,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # ------------------------------------------------------------------
+    # share
+    # ------------------------------------------------------------------
+    share_parser = subparsers.add_parser(
+        "share",
+        help="Empacota um run como conhecimento compartilhavel para agentes",
+    )
+    share_parser.add_argument("run_id", nargs="?", default="", help="ID do run no indice")
+    share_parser.add_argument(
+        "--run-dir",
+        default=None,
+        metavar="PATH",
+        help="Pasta de run com analysis.json e knowledge.md, sem consultar o indice",
+    )
+    share_parser.add_argument(
+        "--out",
+        default=None,
+        metavar="DIR",
+        help="Diretorio de destino (default: ~/.transcreveai/shared-knowledge)",
+    )
+    share_parser.add_argument("--json", dest="as_json", action="store_true", help="Saida JSON")
+
+    # ------------------------------------------------------------------
     # index
     # ------------------------------------------------------------------
     index_parser = subparsers.add_parser(
@@ -483,6 +505,8 @@ def main() -> None:
             _cmd_runs_show(args)
         elif args.runs_command == "rm":
             _cmd_runs_rm(args)
+    elif args.command == "share":
+        _cmd_share(args)
     elif args.command == "sources":
         if args.sources_command == "probe":
             _cmd_sources_probe(args)
@@ -657,6 +681,8 @@ def _cmd_agent_run(args: argparse.Namespace) -> None:
         print(f"Diretorio: {result.workdir}")
         print(f"Markdown: {result.markdown_path}")
         print(f"JSON: {result.analysis_path}")
+        if result.share_command:
+            print(f"Share: {result.share_command}")
         for name, path in result.template_paths.items():
             print(f"Template {name}: {path}")
     if result.reused_existing:
@@ -1015,6 +1041,53 @@ def _is_within_cli_scope(raw_output_dir: str, scope_root: Path) -> bool:
     except OSError:
         return False
     return candidate != root and candidate.is_relative_to(root)
+
+
+def _cmd_share(args: argparse.Namespace) -> None:
+    from .share import ShareRunError, share_run
+
+    try:
+        payload = share_run(
+            run_id=args.run_id,
+            run_dir=args.run_dir,
+            out_dir=args.out,
+            index_db=getattr(args, "index_db", None),
+        )
+    except ShareRunError as exc:
+        if args.as_json:
+            print(
+                json.dumps(
+                    {"ok": False, "error": {"code": "share_failed", "message": str(exc)}},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            print(f"Erro: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as exc:
+        message = f"Falha inesperada ao compartilhar run: {exc}"
+        if args.as_json:
+            print(
+                json.dumps(
+                    {"ok": False, "error": {"code": "share_failed", "message": message}},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            print(f"Erro: {message}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    print(f"OK: {payload['share_dir']}")
+    print(f"Handoff: {payload['handoff_md']}")
+    print(f"Manifest: {payload['manifest_json']}")
+    print(f"Catalog: {payload['catalog_md']}")
+    print(payload["handoff_message"])
 
 
 # ---------------------------------------------------------------------------

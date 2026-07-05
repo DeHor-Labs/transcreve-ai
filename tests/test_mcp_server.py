@@ -130,6 +130,83 @@ class TestMcpServer(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["runs"][0]["id"], "run-001")
 
+    def test_share_run_writes_shared_package(self) -> None:
+        from video_kb.index import RunIndex
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            run_dir = tmp / "outputs" / "run-001"
+            run_dir.mkdir(parents=True)
+            analysis_path = run_dir / "analysis.json"
+            markdown_path = run_dir / "knowledge.md"
+            analysis_path.write_text(
+                '{"run_id":"run-001","source":"https://example.com/video.mp4"}',
+                encoding="utf-8",
+            )
+            markdown_path.write_text("# Demo\n", encoding="utf-8")
+            index_db = tmp / "index.db"
+            with RunIndex(index_db) as idx:
+                idx.register(
+                    "run-001",
+                    "https://example.com/video.mp4",
+                    "hash",
+                    output_dir=str(run_dir),
+                    analysis_path=str(analysis_path),
+                    markdown_path=str(markdown_path),
+                )
+
+            payload = mcp_server.mcp_share_run(
+                "run-001",
+                out=str(tmp / "shared"),
+                index_db=str(index_db),
+            )
+            share_dir = Path(payload["share_dir"])
+            handoff_exists = (share_dir / "handoff.md").exists()
+            manifest_exists = (share_dir / "manifest.json").exists()
+
+        self.assertTrue(payload["ok"])
+        self.assertTrue(handoff_exists)
+        self.assertTrue(manifest_exists)
+
+    def test_share_run_accepts_run_dir_without_index(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            run_dir = tmp / "outputs" / "run-001"
+            run_dir.mkdir(parents=True)
+            (run_dir / "analysis.json").write_text(
+                '{"run_id":"run-001","source":"https://example.com/video.mp4"}',
+                encoding="utf-8",
+            )
+            (run_dir / "knowledge.md").write_text("# Demo\n", encoding="utf-8")
+
+            payload = mcp_server.mcp_share_run(
+                run_dir=str(run_dir),
+                out=str(tmp / "shared"),
+            )
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["source_mode"], "run_dir")
+        self.assertEqual(payload["index_db_scope"], "not_used")
+
+    def test_share_run_failure_returns_structured_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            payload = mcp_server.mcp_share_run(
+                "missing-run",
+                index_db=str(Path(tmpdir) / "index.db"),
+            )
+
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error"]["code"], "share_failed")
+        self.assertIn("missing-run", payload["error"]["message"])
+
+    def test_share_run_unexpected_failure_returns_structured_error(self) -> None:
+        with patch("video_kb.share.share_run", side_effect=RuntimeError("disk denied")):
+            payload = mcp_server.mcp_share_run("run-001")
+
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error"]["code"], "share_failed")
+        self.assertIn("disk denied", payload["error"]["message"])
+
     def test_agent_batch_passes_analysis_options(self) -> None:
         captured: list[AgentWorkflowOptions] = []
 
@@ -198,6 +275,7 @@ class TestMcpServer(unittest.TestCase):
         self.assertIn("agent_run", tool_names)
         self.assertIn("agent_batch", tool_names)
         self.assertIn("ask", tool_names)
+        self.assertIn("share_run", tool_names)
 
     def test_registered_tool_returns_structured_payload_when_mcp_installed(self) -> None:
         try:
@@ -243,6 +321,46 @@ class TestMcpServer(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertIsNone(payload["answer"])
         self.assertEqual(payload["sources"][0]["chunk_id"], "chunk-001")
+
+    def test_mcp_ask_search_only_serializes_real_search_hits(self) -> None:
+        from video_kb.embeddings.chunker import EmbeddingChunk
+        from video_kb.embeddings.store import EmbeddingStore
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "index.db"
+            chunk = EmbeddingChunk(
+                chunk_id="run-real:0000",
+                run_id="run-real",
+                chunk_index=0,
+                chunk_type="summary",
+                chunk_text="Codex e Claude reutilizam knowledge.md.",
+                excerpt="Codex e Claude reutilizam knowledge.md.",
+                source_title="Demo",
+                source_url="https://example.com/demo",
+            )
+            provider = SimpleNamespace(
+                capabilities=lambda: ["embed"],
+                embed=lambda texts: [[1.0, 0.0] for _ in texts],
+            )
+            with EmbeddingStore(db_path) as store:
+                store.upsert_chunks(
+                    run_id="run-real",
+                    chunks=[chunk],
+                    vectors=[[1.0, 0.0]],
+                    provider="local",
+                    model="test-model",
+                )
+
+            with patch("video_kb.providers.load_provider", return_value=provider):
+                payload = mcp_server.mcp_ask(
+                    "knowledge",
+                    provider="local",
+                    search_only=True,
+                    index_db=str(db_path),
+                )
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["sources"][0]["chunk_id"], "run-real:0000")
 
 
 if __name__ == "__main__":

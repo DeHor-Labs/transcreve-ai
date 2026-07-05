@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shlex
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -58,6 +59,8 @@ class AgentWorkflowResult:
     answer: str | None = None
     sources: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    share_command: str = ""
+    share_run_dir_command: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -157,11 +160,34 @@ def run_agent_workflow(source: str, options: AgentWorkflowOptions) -> AgentWorkf
             result.question = options.question
             result.warnings.append("Pergunta solicitada, mas nenhuma resposta foi gerada.")
 
+    _attach_share_commands(result, options)
     return result
 
 
 def dumps_agent_result(result: AgentWorkflowResult) -> str:
     return json.dumps(result.to_dict(), ensure_ascii=False, indent=2)
+
+
+def _attach_share_commands(
+    result: AgentWorkflowResult,
+    options: AgentWorkflowOptions,
+) -> AgentWorkflowResult:
+    if not result.run_id:
+        return result
+    command = ["transcreveai"]
+    if options.index_db:
+        command.extend(["--index-db", options.index_db])
+    command.extend(["share", result.run_id, "--json"])
+    result.share_command = _shell_command(command)
+    if result.workdir:
+        result.share_run_dir_command = _shell_command(
+            ["transcreveai", "share", "--run-dir", result.workdir, "--json"]
+        )
+    return result
+
+
+def _shell_command(parts: list[str]) -> str:
+    return " ".join(shlex.quote(str(part)) for part in parts)
 
 
 def artifact_reference_available(reference: str) -> bool:
