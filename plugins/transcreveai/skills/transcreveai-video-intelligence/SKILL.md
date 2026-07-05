@@ -13,7 +13,7 @@ Use this skill when the user sends a video URL/file or asks Codex to extract, su
   - `sources_probe` for source pre-checks.
   - `agent_run` for the full probe/analyze/index/ask workflow.
   - `agent_batch` for saved lists of sources.
-  - `index`, `ask`, `runs_list`, and `runs_show` for retrieval.
+  - `index`, `ask`, `runs_list`, `runs_show`, and `shared_catalog` for retrieval.
 - If the MCP tools are not available in the current Codex thread, use the CLI.
 - CLI command preference:
   - First try `transcreveai`.
@@ -30,7 +30,7 @@ Whenever TranscreveAI is used as a nested capability for another agent or workfl
 - Keep `run_id`, `out`, and `index-db` identifiable for the caller.
 - Use temporary retention by default when the caller only needs extraction, summary, or an answer from YouTube, Reels, TikTok, local media, and similar sources.
 - Preserve artifacts or index in the user's real knowledge base only when the caller/user asks to save, index, audit later, or reuse the dossier.
-- When durable reuse is requested, run `transcreveai share RUN_ID --json` or call MCP `share_run` after analysis. If the run used an isolated index, pass the same `--index-db` or use `transcreveai share --run-dir "$RUN_DIR" --json`. It writes `handoff.md`, `manifest.json`, `knowledge.md`, and `analysis.json`, and updates share-root `catalog.json`/`index.md`.
+- When durable reuse is requested, run `transcreveai share RUN_ID --json` or call MCP `share_run` after analysis. If the run used an isolated index, pass the same `--index-db` or use `transcreveai share --run-dir "$RUN_DIR" --json`. It writes `handoff.md`, `manifest.json`, `knowledge.md`, and `analysis.json`, and updates share-root `catalog.json`/`index.md`. To rediscover durable packets later, use `transcreveai share --catalog --json` or MCP `shared_catalog`.
 - If the dossier is preserved or indexed, explicitly say:
   `O dossie que voce criou foi salvo para voce como conhecimento.`
 - Include the path to `knowledge.md`, the `run_id`, and whether the knowledge was saved in the user's real index or in an isolated agent index.

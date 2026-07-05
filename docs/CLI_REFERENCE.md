@@ -207,6 +207,7 @@ Tools expostas:
 | `runs_list` | Lista runs do indice SQLite |
 | `runs_show` | Retorna detalhes de um run especifico |
 | `share_run` | Gera `handoff.md`, `manifest.json` e catalogo para um run local indexado |
+| `shared_catalog` | Lista pacotes duraveis criados por `share_run` |
 
 As tools capturam stdout/stderr do pipeline e devolvem esses logs no campo
 `logs`, para preservar o protocolo MCP quando o transporte e `stdio`.
