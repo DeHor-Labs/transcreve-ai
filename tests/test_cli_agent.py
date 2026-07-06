@@ -74,6 +74,7 @@ class TestCliAgentRun(unittest.TestCase):
             workdir.mkdir(parents=True)
             (workdir / "knowledge.md").write_text("# Dossie\n", encoding="utf-8")
             (workdir / "analysis.json").write_text("{}", encoding="utf-8")
+            index_db = Path(tmpdir) / "index.db"
 
             fake_result = SimpleNamespace(
                 run_id="run-001",
@@ -86,7 +87,16 @@ class TestCliAgentRun(unittest.TestCase):
                 return_value=fake_result,
             ):
                 out, err, code = _run_cmd(
-                    ["agent", "run", str(source), "--out", str(workdir.parent), "--json"]
+                    [
+                        "--index-db",
+                        str(index_db),
+                        "agent",
+                        "run",
+                        str(source),
+                        "--out",
+                        str(workdir.parent),
+                        "--json",
+                    ]
                 )
 
         self.assertEqual(code, 0, msg=err)
@@ -95,6 +105,104 @@ class TestCliAgentRun(unittest.TestCase):
         self.assertEqual(payload["run_id"], "run-001")
         self.assertTrue(payload["markdown_path"].endswith("knowledge.md"))
         self.assertFalse(payload["reused_existing"])
+        self.assertEqual(
+            payload["share_command"],
+            f"transcreveai --index-db {index_db} share run-001 --json",
+        )
+        self.assertEqual(
+            payload["share_run_dir_command"],
+            f"transcreveai share --run-dir {workdir} --json",
+        )
+        self.assertEqual(
+            payload["share_catalog_command"],
+            "transcreveai share --catalog --json",
+        )
+
+    def test_share_json_outputs_shared_agent_package(self) -> None:
+        from video_kb.index import RunIndex
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            run_dir = tmp / "outputs" / "run-001"
+            run_dir.mkdir(parents=True)
+            analysis_path = run_dir / "analysis.json"
+            markdown_path = run_dir / "knowledge.md"
+            analysis_path.write_text(
+                json.dumps(
+                    {
+                        "run_id": "run-001",
+                        "source": "https://example.com/video.mp4",
+                        "metadata": {"title": "Demo"},
+                        "synthesis": {"summary": "Resumo."},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            markdown_path.write_text("# Demo\n", encoding="utf-8")
+            index_db = tmp / "index.db"
+            with RunIndex(index_db) as idx:
+                idx.register(
+                    "run-001",
+                    "https://example.com/video.mp4",
+                    "hash",
+                    title="Demo",
+                    output_dir=str(run_dir),
+                    analysis_path=str(analysis_path),
+                    markdown_path=str(markdown_path),
+                )
+
+            out, err, code = _run_cmd(
+                [
+                    "--index-db",
+                    str(index_db),
+                    "share",
+                    "run-001",
+                    "--out",
+                    str(tmp / "shared"),
+                    "--json",
+                ]
+            )
+            payload = json.loads(out.strip() or "{}")
+            manifest_exists = Path(payload["manifest_json"]).exists()
+            catalog_out, catalog_err, catalog_code = _run_cmd(
+                [
+                    "share",
+                    "--catalog",
+                    "--out",
+                    str(tmp / "shared"),
+                    "--query",
+                    "Resumo",
+                    "--json",
+                ]
+            )
+            catalog_payload = json.loads(catalog_out.strip() or "{}")
+
+        self.assertEqual(code, 0, msg=err)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["run_id"], "run-001")
+        self.assertTrue(manifest_exists)
+        self.assertEqual(catalog_code, 0, msg=catalog_err)
+        self.assertEqual(catalog_payload["query"], "Resumo")
+        self.assertEqual(catalog_payload["entries"][0]["run_id"], "run-001")
+
+    def test_share_json_outputs_structured_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out, err, code = _run_cmd(
+                [
+                    "--index-db",
+                    str(Path(tmpdir) / "index.db"),
+                    "share",
+                    "missing-run",
+                    "--json",
+                ]
+            )
+
+        self.assertEqual(code, 1)
+        self.assertEqual(err, "")
+        payload = json.loads(out.strip() or "{}")
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error"]["code"], "share_failed")
+        self.assertIn("missing-run", payload["error"]["message"])
 
     def test_agent_run_template_content_outputs_template_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

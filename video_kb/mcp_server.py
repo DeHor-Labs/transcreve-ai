@@ -406,6 +406,49 @@ def mcp_runs_show(run_id: str, index_db: str | None = None) -> dict[str, Any]:
     return {"ok": True, "run": run}
 
 
+def mcp_share_run(
+    run_id: str = "",
+    run_dir: str | None = None,
+    out: str = "",
+    index_db: str | None = None,
+) -> dict[str, Any]:
+    """Package one indexed run as a durable shared-knowledge handoff."""
+    _prepare_runtime()
+    try:
+        from .share import ShareRunError, share_run
+    except ImportError as exc:
+        return _error_payload("share_unavailable", f"Dependencia ausente: {exc}", _empty_logs())
+
+    try:
+        return share_run(run_id=run_id, run_dir=run_dir, out_dir=out or None, index_db=index_db)
+    except ShareRunError as exc:
+        return _error_payload("share_failed", str(exc), _empty_logs())
+    except Exception as exc:
+        return _error_payload(
+            "share_failed",
+            f"Falha inesperada ao compartilhar run: {exc}",
+            _empty_logs(),
+        )
+
+
+def mcp_shared_catalog(out: str = "", limit: int = 20, query: str = "") -> dict[str, Any]:
+    """List durable shared-knowledge packets."""
+    _prepare_runtime()
+    try:
+        from .share import shared_catalog
+    except ImportError as exc:
+        return _error_payload("share_unavailable", f"Dependencia ausente: {exc}", _empty_logs())
+
+    try:
+        return shared_catalog(out_dir=out or None, limit=limit, query=query)
+    except Exception as exc:
+        return _error_payload(
+            "share_failed",
+            f"Falha inesperada ao listar catalogo compartilhado: {exc}",
+            _empty_logs(),
+        )
+
+
 def create_server(host: str = "127.0.0.1", port: int = 8765) -> Any:
     """Create the optional FastMCP server."""
     try:
@@ -617,6 +660,19 @@ def create_server(host: str = "127.0.0.1", port: int = 8765) -> Any:
     @server.tool(name="runs_show", structured_output=True)
     def runs_show_tool(run_id: str, index_db: str | None = None) -> dict[str, Any]:
         return mcp_runs_show(run_id=run_id, index_db=index_db)
+
+    @server.tool(name="share_run", structured_output=True)
+    def share_run_tool(
+        run_id: str = "",
+        run_dir: str | None = None,
+        out: str = "",
+        index_db: str | None = None,
+    ) -> dict[str, Any]:
+        return mcp_share_run(run_id=run_id, run_dir=run_dir, out=out, index_db=index_db)
+
+    @server.tool(name="shared_catalog", structured_output=True)
+    def shared_catalog_tool(out: str = "", limit: int = 20, query: str = "") -> dict[str, Any]:
+        return mcp_shared_catalog(out=out, limit=limit, query=query)
 
     return server
 

@@ -10,9 +10,10 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from .chunker import EmbeddingChunk
 
@@ -59,6 +60,8 @@ class SearchHit:
     excerpt: str
     score: float
     chapter_start: float | None
+    chunk_id: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -322,6 +325,7 @@ class EmbeddingStore:
                     excerpt=row["chunk_text"][:200],
                     score=score,
                     chapter_start=row["chapter_start"],
+                    chunk_id=row["id"],
                 )
             )
 

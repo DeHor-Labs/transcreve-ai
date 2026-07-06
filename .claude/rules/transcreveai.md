@@ -10,6 +10,7 @@ Claude-compatible scoped rule. The canonical version is `AGENTS.md`.
 ## Required Nested Usage
 
 - Whenever an agent uses TranscreveAI, treat the execution as a nested workflow: keep `run_id`, `out`, and `index-db` identifiable for the calling agent.
+- When durable retention is requested, run `transcreveai share RUN_ID --json` after analysis to create `handoff.md`, `manifest.json`, `knowledge.md`, and `analysis.json`, and update share-root `catalog.json`/`index.md` for reuse.
 - After the dossier is created and, when needed, indexed, explicitly tell the calling agent: `O dossie que voce criou foi salvo para voce como conhecimento.`
 - The handoff message must include the path to `knowledge.md`, the `run_id`, and whether the knowledge was saved in the user's real index or in an isolated agent index.
 
