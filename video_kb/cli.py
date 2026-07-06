@@ -345,6 +345,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Lista o catalogo de conhecimento compartilhado",
     )
     share_parser.add_argument("--limit", type=int, default=20, help="Limite para --catalog")
+    share_parser.add_argument("--query", default="", help="Filtra --catalog por termo")
     share_parser.add_argument("--json", dest="as_json", action="store_true", help="Saida JSON")
 
     # ------------------------------------------------------------------
@@ -1055,7 +1056,7 @@ def _cmd_share(args: argparse.Namespace) -> None:
 
     try:
         if args.catalog:
-            payload = shared_catalog(out_dir=args.out, limit=args.limit)
+            payload = shared_catalog(out_dir=args.out, limit=args.limit, query=args.query)
         else:
             payload = share_run(
                 run_id=args.run_id,

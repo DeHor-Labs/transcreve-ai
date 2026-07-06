@@ -105,6 +105,7 @@ transcreveai index <run_id>
 transcreveai ask "quais ferramentas, passos e riscos aparecem no video?" --run-id <run_id>
 transcreveai share <run_id> --json
 transcreveai share --catalog --json
+transcreveai share --catalog --query whatsapp --json
 ```
 
 Project artifacts:
@@ -642,8 +643,8 @@ The CLI is intentionally worker-friendly:
 4. `knowledge.md` is saved to Git, Obsidian, Notion, Drive or returned in chat.
 5. `transcreveai share <run_id>` writes a durable handoff packet and updates a
    share-root catalog for Codex, Claude Code or another agent to reuse later.
-6. `transcreveai share --catalog` or MCP `shared_catalog` lists those packets
-   without guessing filesystem paths.
+6. `transcreveai share --catalog --query <term>` or MCP `shared_catalog` lists
+   matching packets without guessing filesystem paths.
 
 Future versions can wrap the same core with a web UI, background jobs and storage adapters.
 

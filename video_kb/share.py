@@ -94,16 +94,22 @@ def shared_catalog(
     *,
     out_dir: str | Path | None = None,
     limit: int = 20,
+    query: str = "",
 ) -> dict[str, Any]:
     share_root = (Path(out_dir).expanduser() if out_dir else DEFAULT_SHARE_DIR).resolve()
     catalog_json = share_root / "catalog.json"
     catalog_md = share_root / "index.md"
-    entries = _read_catalog_entries(catalog_json)[: max(1, min(limit, 500))]
+    entries = _read_catalog_entries(catalog_json)
+    clean_query = query.strip().lower()
+    if clean_query:
+        entries = [entry for entry in entries if _catalog_entry_matches(entry, clean_query)]
+    entries = entries[: max(1, min(limit, 500))]
     return {
         "ok": True,
         "share_root": str(share_root),
         "catalog_json": str(catalog_json),
         "catalog_md": str(catalog_md),
+        "query": query.strip(),
         "entries": entries,
     }
 
@@ -385,6 +391,10 @@ def _catalog_markdown(entries: list[dict[str, Any]]) -> str:
         if summary:
             lines.extend([summary, ""])
     return "\n".join(lines)
+
+
+def _catalog_entry_matches(entry: dict[str, Any], query: str) -> bool:
+    return query in "\n".join(str(value) for value in entry.values()).lower()
 
 
 def _extend_list(lines: list[str], title: str, items: list[Any]) -> None:

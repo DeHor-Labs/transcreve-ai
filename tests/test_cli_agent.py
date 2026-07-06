@@ -170,6 +170,8 @@ class TestCliAgentRun(unittest.TestCase):
                     "--catalog",
                     "--out",
                     str(tmp / "shared"),
+                    "--query",
+                    "Resumo",
                     "--json",
                 ]
             )
@@ -180,6 +182,7 @@ class TestCliAgentRun(unittest.TestCase):
         self.assertEqual(payload["run_id"], "run-001")
         self.assertTrue(manifest_exists)
         self.assertEqual(catalog_code, 0, msg=catalog_err)
+        self.assertEqual(catalog_payload["query"], "Resumo")
         self.assertEqual(catalog_payload["entries"][0]["run_id"], "run-001")
 
     def test_share_json_outputs_structured_error(self) -> None:

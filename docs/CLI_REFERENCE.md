@@ -685,6 +685,7 @@ transcreveai share RUN_ID [opcoes]
 |---|---|---|
 | `--run-dir PATH` | Usa uma pasta de run contendo `analysis.json` e `knowledge.md` sem consultar o indice | - |
 | `--out DIR` | Diretorio de destino | `~/.transcreveai/shared-knowledge` |
+| `--query TEXT` | Filtra `--catalog` por termo em run, titulo, origem ou resumo | - |
 | `--json` | Saida JSON com paths do pacote | `false` |
 
 ### Exemplos
@@ -694,6 +695,7 @@ transcreveai share 20260601T060803Z-youtu-be-abc123
 transcreveai share 20260601T060803Z-youtu-be-abc123 --out ~/handoffs --json
 transcreveai share --run-dir outputs/20260601T060803Z-youtu-be-abc123 --json
 transcreveai share --catalog --json
+transcreveai share --catalog --query whatsapp --json
 ```
 
 O pacote gerado e intencionalmente simples: `handoff.md` para leitura por

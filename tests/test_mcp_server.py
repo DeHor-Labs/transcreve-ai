@@ -160,7 +160,8 @@ class TestMcpServer(unittest.TestCase):
                 out=str(tmp / "shared"),
                 index_db=str(index_db),
             )
-            catalog = mcp_server.mcp_shared_catalog(out=str(tmp / "shared"))
+            catalog = mcp_server.mcp_shared_catalog(out=str(tmp / "shared"), query="video")
+            empty_catalog = mcp_server.mcp_shared_catalog(out=str(tmp / "shared"), query="missing")
             share_dir = Path(payload["share_dir"])
             handoff_exists = (share_dir / "handoff.md").exists()
             manifest_exists = (share_dir / "manifest.json").exists()
@@ -168,7 +169,9 @@ class TestMcpServer(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertTrue(handoff_exists)
         self.assertTrue(manifest_exists)
+        self.assertEqual(catalog["query"], "video")
         self.assertEqual(catalog["entries"][0]["run_id"], "run-001")
+        self.assertEqual(empty_catalog["entries"], [])
 
     def test_share_run_accepts_run_dir_without_index(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -79,6 +79,10 @@ class TestShareRun(unittest.TestCase):
             self.assertEqual(catalog["entries"][0]["run_id"], "run-001")
             shared = shared_catalog(out_dir=tmp / "shared")
             self.assertEqual(shared["entries"][0]["run_id"], "run-001")
+            filtered = shared_catalog(out_dir=tmp / "shared", query="reutilizavel")
+            self.assertEqual(filtered["query"], "reutilizavel")
+            self.assertEqual(filtered["entries"][0]["run_id"], "run-001")
+            self.assertEqual(shared_catalog(out_dir=tmp / "shared", query="missing")["entries"], [])
             self.assertIn("O dossie", (share_dir / "handoff.md").read_text(encoding="utf-8"))
 
     def test_share_run_from_dir_does_not_claim_default_index(self) -> None:

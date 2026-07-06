@@ -431,7 +431,7 @@ def mcp_share_run(
         )
 
 
-def mcp_shared_catalog(out: str = "", limit: int = 20) -> dict[str, Any]:
+def mcp_shared_catalog(out: str = "", limit: int = 20, query: str = "") -> dict[str, Any]:
     """List durable shared-knowledge packets."""
     _prepare_runtime()
     try:
@@ -440,7 +440,7 @@ def mcp_shared_catalog(out: str = "", limit: int = 20) -> dict[str, Any]:
         return _error_payload("share_unavailable", f"Dependencia ausente: {exc}", _empty_logs())
 
     try:
-        return shared_catalog(out_dir=out or None, limit=limit)
+        return shared_catalog(out_dir=out or None, limit=limit, query=query)
     except Exception as exc:
         return _error_payload(
             "share_failed",
@@ -671,8 +671,8 @@ def create_server(host: str = "127.0.0.1", port: int = 8765) -> Any:
         return mcp_share_run(run_id=run_id, run_dir=run_dir, out=out, index_db=index_db)
 
     @server.tool(name="shared_catalog", structured_output=True)
-    def shared_catalog_tool(out: str = "", limit: int = 20) -> dict[str, Any]:
-        return mcp_shared_catalog(out=out, limit=limit)
+    def shared_catalog_tool(out: str = "", limit: int = 20, query: str = "") -> dict[str, Any]:
+        return mcp_shared_catalog(out=out, limit=limit, query=query)
 
     return server
 
