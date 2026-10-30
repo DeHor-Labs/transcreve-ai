@@ -24,6 +24,7 @@ jobs:
     outputs:
       python: ${{ steps.filter.outputs.python }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      plugin: ${{ steps.filter.outputs.plugin }}
       github: ${{ steps.filter.outputs.github }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -42,6 +43,9 @@ jobs:
             frontend:
               - ".github/workflows/ci.yml"
               - "frontend/**"
+            plugin:
+              - ".github/workflows/ci.yml"
+              - "plugins/obsidian-transcreveai/**"
             github:
               - ".github/**"
 
@@ -173,6 +177,30 @@ jobs:
         working-directory: frontend
         run: pnpm build
 
+  plugin:
+    name: Obsidian plugin
+    runs-on: ubuntu-latest
+    needs: changes
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      needs.changes.outputs.plugin == 'true' ||
+      needs.changes.outputs.github == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: plugins/obsidian-transcreveai/package-lock.json
+      - name: Install plugin dependencies
+        working-directory: plugins/obsidian-transcreveai
+        run: npm ci
+      - name: Build plugin
+        working-directory: plugins/obsidian-transcreveai
+        run: npm run build
+
   ci-gate:
     name: CI Gate
     needs:
@@ -181,6 +209,7 @@ jobs:
       - python-tests
       - coverage
       - frontend
+      - plugin
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -188,6 +217,7 @@ jobs:
         env:
           CHANGED_PYTHON: ${{ needs.changes.outputs.python }}
           CHANGED_FRONTEND: ${{ needs.changes.outputs.frontend }}
+          CHANGED_PLUGIN: ${{ needs.changes.outputs.plugin }}
           CHANGED_GITHUB: ${{ needs.changes.outputs.github }}
           COVERAGE_LABEL: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'coverage') }}
           CHANGES_RESULT: ${{ needs.changes.result }}
@@ -195,6 +225,7 @@ jobs:
           PYTESTS_RESULT: ${{ needs.python-tests.result }}
           COVERAGE_RESULT: ${{ needs.coverage.result }}
           FRONTEND_RESULT: ${{ needs.frontend.result }}
+          PLUGIN_RESULT: ${{ needs.plugin.result }}
         run: |
           set -euo pipefail
 
@@ -202,12 +233,14 @@ jobs:
           python_tests_required=false
           coverage_required=false
           frontend_required=false
+          plugin_required=false
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             quality_required=true
             python_tests_required=true
             coverage_required=true
             frontend_required=true
+            plugin_required=true
           elif [[ "${{ github.event_name }}" == "push" ]]; then
             if [[ "$CHANGED_PYTHON" == "true" || "$CHANGED_GITHUB" == "true" ]]; then
               quality_required=true
@@ -215,6 +248,9 @@ jobs:
             fi
             if [[ "$CHANGED_FRONTEND" == "true" || "$CHANGED_GITHUB" == "true" ]]; then
               frontend_required=true
+            fi
+            if [[ "$CHANGED_PLUGIN" == "true" || "$CHANGED_GITHUB" == "true" ]]; then
+              plugin_required=true
             fi
             if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
               coverage_required=true
@@ -229,6 +265,9 @@ jobs:
             fi
             if [[ "$CHANGED_FRONTEND" == "true" || "$CHANGED_GITHUB" == "true" ]]; then
               frontend_required=true
+            fi
+            if [[ "$CHANGED_PLUGIN" == "true" || "$CHANGED_GITHUB" == "true" ]]; then
+              plugin_required=true
             fi
             if [[ "$COVERAGE_LABEL" == "true" ]]; then
               quality_required=true
@@ -260,6 +299,7 @@ jobs:
           require_success "quality" "$quality_required" "$QUALITY_RESULT"
           require_success "python-tests" "$python_tests_required" "$PYTESTS_RESULT"
           require_success "frontend" "$frontend_required" "$FRONTEND_RESULT"
+          require_success "plugin" "$plugin_required" "$PLUGIN_RESULT"
           require_success "coverage" "$coverage_required" "$COVERAGE_RESULT"
           require_success "changes" "true" "$CHANGES_RESULT"
 
@@ -277,6 +317,11 @@ jobs:
             echo "frontend: required"
           else
             echo "frontend: optional"
+          fi
+          if [[ "$plugin_required" == "true" ]]; then
+            echo "plugin: required"
+          else
+            echo "plugin: optional"
           fi
           if [[ "$coverage_required" == "true" ]]; then
             echo "coverage: required"
