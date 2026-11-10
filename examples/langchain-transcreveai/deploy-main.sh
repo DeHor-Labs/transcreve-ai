@@ -35,5 +35,7 @@ for attempt in range(15):
         time.sleep(2)
 print('Aplicação autenticada respondeu HTTP 200.')
 PY
+install -m 700 examples/langchain-transcreveai/deploy-main.sh /docker/langchain-demo/deploy-main.new
+mv -f /docker/langchain-demo/deploy-main.new /docker/langchain-demo/deploy-main
 trap - ERR
 printf 'Implantado commit %s\n' "$(git rev-parse HEAD)"
