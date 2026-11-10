@@ -39,3 +39,7 @@ python -m pytest -q
 Os testes usam embeddings e modelo falsos e simulam a chamada ao TranscreveAI. Não usam rede nem medem a qualidade das respostas. Para validar ponta a ponta, execute os comandos de ingestão e pergunta acima com vídeo e credenciais válidas.
 
 Referências: [TranscreveAI](https://github.com/DeHor-Labs/transcreve-ai) e [LangChain](https://docs.langchain.com/oss/python/langchain/overview).
+
+## Interface local
+
+Execute `uvicorn web:app --host 127.0.0.1 --port 8000` dentro desta pasta e abra `http://127.0.0.1:8000`. Cole o conteúdo de `knowledge.md` e faça sua pergunta. O serviço é apenas local: ainda não tem autenticação, limitação de chamadas ou proteção para publicação pública.

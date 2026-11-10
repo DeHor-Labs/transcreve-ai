@@ -3,3 +3,5 @@ langchain-openai>=1.0,<2
 langchain-text-splitters>=1.0,<2
 numpy>=1.24
 pytest>=8,<10
+fastapi>=0.111,<1
+uvicorn>=0.29,<1
