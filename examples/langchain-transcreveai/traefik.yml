@@ -1,0 +1,24 @@
+http:
+  routers:
+    langchain-demo:
+      rule: "Host(`langchain.dehor.com.br`)"
+      entryPoints: [websecure]
+      service: langchain-demo
+      middlewares: [langchain-limits, langchain-rate]
+      tls:
+        certResolver: letsencrypt
+  services:
+    langchain-demo:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:18051"
+  middlewares:
+    langchain-limits:
+      buffering:
+        maxRequestBodyBytes: 53477376
+        memRequestBodyBytes: 1048576
+    langchain-rate:
+      rateLimit:
+        average: 10
+        period: 1m
+        burst: 5

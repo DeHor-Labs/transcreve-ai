@@ -40,6 +40,11 @@ Os testes usam embeddings e modelo falsos e simulam a chamada ao TranscreveAI. N
 
 Referências: [TranscreveAI](https://github.com/DeHor-Labs/transcreve-ai) e [LangChain](https://docs.langchain.com/oss/python/langchain/overview).
 
-## Interface local
+## Interface web
 
-Execute `uvicorn web:app --host 127.0.0.1 --port 8000` dentro desta pasta e abra `http://127.0.0.1:8000`. Cole o conteúdo de `knowledge.md` e faça sua pergunta. O serviço é apenas local: ainda não tem autenticação, limitação de chamadas ou proteção para publicação pública.
+Configure `DEMO_PASSWORD` e `OPENAI_API_KEY` no ambiente, depois execute `uvicorn web:app --host 127.0.0.1 --port 8000` nesta pasta. Entre com usuário `demo` e a senha configurada. A interface aceita vídeo local de até 50 MB e dois minutos, cria um dossiê temporário e permite perguntas sobre ele. Os arquivos temporários são apagados após o processamento; o conteúdo continua no navegador durante a sessão. Apenas um vídeo é processado de cada vez.
+
+A configuração de implantação usa Docker e Traefik, HTTPS, autenticação e limites de requisição. A senha e a chave pertencem ao arquivo externo `secrets.env`, fora do Git. O processamento, a pergunta e os trechos são enviados ao provedor de IA e podem gerar custos. O limite de autenticação e o limite de taxa da configuração são adequados a uma demonstração privada, não a uma oferta pública multiusuário.
+
+Para implantação: `docker compose -f examples/langchain-transcreveai/docker-compose.yml up -d --build`. A configuração `traefik.yml` deve ser instalada no diretório dinâmico do Traefik e o domínio deve apontar para o servidor. Antes de executar, crie `/docker/langchain-demo/secrets.env` com permissões restritas e as variáveis `DEMO_PASSWORD` e `OPENAI_API_KEY`.
+

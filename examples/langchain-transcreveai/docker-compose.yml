@@ -1,0 +1,14 @@
+services:
+  langchain-demo:
+    build:
+      context: ../..
+      dockerfile: examples/langchain-transcreveai/Dockerfile
+    restart: unless-stopped
+    env_file: /docker/langchain-demo/secrets.env
+    ports:
+      - "127.0.0.1:18051:8000"
+    mem_limit: 1g
+    cpus: 1.5
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
