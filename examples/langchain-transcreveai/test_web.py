@@ -71,3 +71,16 @@ def test_interview_corpus_and_coaching_are_private(monkeypatch, tmp_path):
     result = client.post("/interviews/coach", auth=auth, json={"question": "Como melhorar?"})
     assert result.status_code == 200
     assert result.json()["sources"][0]["title"] == "Entrevista"
+
+
+def test_cross_site_mutation_is_rejected(monkeypatch):
+    monkeypatch.setenv("DEMO_PASSWORD", "senha-teste")
+    monkeypatch.setenv("DEMO_ORIGIN", "https://langchain.dehor.com.br")
+    client = TestClient(web.app)
+    response = client.post(
+        "/interviews",
+        auth=("demo", "senha-teste"),
+        headers={"origin": "https://attacker.example", "sec-fetch-site": "cross-site"},
+        json={"title": "teste", "transcript": "teste"},
+    )
+    assert response.status_code == 403

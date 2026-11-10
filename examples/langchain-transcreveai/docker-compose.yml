@@ -5,6 +5,8 @@ services:
       dockerfile: examples/langchain-transcreveai/Dockerfile
     restart: unless-stopped
     env_file: /docker/langchain-demo/secrets.env
+    environment:
+      DEMO_ORIGIN: https://langchain.dehor.com.br
     volumes:
       - /docker/langchain-demo/interviews:/data/interviews
     ports:

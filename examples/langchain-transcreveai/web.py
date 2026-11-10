@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Annotated
 
 from app import answer_question, prepare_store
-from fastapi import Depends, FastAPI, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from langchain_core.documents import Document
 from langchain_core.vectorstores import InMemoryVectorStore
@@ -25,6 +25,16 @@ security = HTTPBasic()
 MAX_VIDEO_SIZE = 50 * 1024 * 1024
 processing = threading.BoundedSemaphore(1)
 INTERVIEWS = Path(os.environ.get("INTERVIEW_DIR", "/data/interviews"))
+
+
+@app.middleware("http")
+async def reject_cross_site_requests(request: Request, call_next):
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        origin = request.headers.get("origin")
+        allowed = os.environ.get("DEMO_ORIGIN", "http://127.0.0.1:8000")
+        if request.headers.get("sec-fetch-site") == "cross-site" or (origin and origin != allowed):
+            return JSONResponse(status_code=403, content={"detail": "Origem não permitida."})
+    return await call_next(request)
 
 
 def authenticate(credentials: Annotated[HTTPBasicCredentials, Depends(security)]):
