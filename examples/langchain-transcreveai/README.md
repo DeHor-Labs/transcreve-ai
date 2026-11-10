@@ -48,3 +48,7 @@ A configuração de implantação usa Docker e Traefik, HTTPS, autenticação e 
 
 Para implantação: `docker compose -f examples/langchain-transcreveai/docker-compose.yml up -d --build`. A configuração `traefik.yml` deve ser instalada no diretório dinâmico do Traefik e o domínio deve apontar para o servidor. Antes de executar, crie `/docker/langchain-demo/secrets.env` com permissões restritas e as variáveis `DEMO_PASSWORD` e `OPENAI_API_KEY`.
 
+
+## Treino de entrevistas
+
+Na seção de entrevistas, adicione somente transcrições de entrevistas que queira usar no treino. A aplicação armazena os textos em `/docker/langchain-demo/interviews`, fora do Git, e usa recuperação LangChain para montar respostas com trechos identificados por título. O conteúdo recuperado e a pergunta são enviados à OpenAI. O modelo pode errar; confira os trechos e não apresente inferências como realizações comprovadas. O acesso é protegido pela mesma senha da demonstração. Faça backup privado dos arquivos se precisar preservá-los; a aplicação não sincroniza automaticamente com o Tactiq.

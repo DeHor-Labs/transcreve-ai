@@ -51,3 +51,23 @@ def test_video_ingestion_is_isolated_and_returns_dossier(monkeypatch):
     )
     assert response.status_code == 200
     assert response.json() == {"dossier": "Dossiê do vídeo"}
+
+
+def test_interview_corpus_and_coaching_are_private(monkeypatch, tmp_path):
+    monkeypatch.setenv("DEMO_PASSWORD", "senha-teste")
+    monkeypatch.setattr(web, "INTERVIEWS", tmp_path)
+    monkeypatch.setattr(web, "OpenAIEmbeddings", lambda: None)
+    monkeypatch.setattr(web, "ChatOpenAI", lambda **kwargs: None)
+    monkeypatch.setattr(web.InMemoryVectorStore, "from_documents", lambda docs, embeddings: docs)
+    monkeypatch.setattr(
+        web, "answer_question", lambda docs, question, model, **kw: ("Sugestão", docs)
+    )
+    client = TestClient(web.app)
+    auth = ("demo", "senha-teste")
+    item = {"title": "Entrevista", "transcript": "Construí um fluxo de RAG."}
+    assert client.post("/interviews", json=item).status_code == 401
+    assert client.post("/interviews", auth=auth, json=item).status_code == 200
+    assert client.get("/interviews", auth=auth).json() == ["Entrevista"]
+    result = client.post("/interviews/coach", auth=auth, json={"question": "Como melhorar?"})
+    assert result.status_code == 200
+    assert result.json()["sources"][0]["title"] == "Entrevista"

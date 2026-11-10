@@ -1,10 +1,12 @@
 """Demonstração autenticada de TranscreveAI e RAG com LangChain."""
 
 import hmac
+import json
 import os
 import subprocess
 import tempfile
 import threading
+import uuid
 from pathlib import Path
 from typing import Annotated
 
@@ -12,13 +14,17 @@ from app import answer_question, prepare_store
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from langchain_core.documents import Document
+from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="TranscreveAI + LangChain", docs_url=None, redoc_url=None)
 security = HTTPBasic()
 MAX_VIDEO_SIZE = 50 * 1024 * 1024
 processing = threading.BoundedSemaphore(1)
+INTERVIEWS = Path(os.environ.get("INTERVIEW_DIR", "/data/interviews"))
 
 
 def authenticate(credentials: Annotated[HTTPBasicCredentials, Depends(security)]):
@@ -141,4 +147,66 @@ def ask(request: Question):
     except Exception as exc:
         raise HTTPException(
             status_code=502, detail="Não foi possível consultar o provedor."
+        ) from exc
+
+
+class Interview(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    transcript: str = Field(min_length=1, max_length=200_000)
+
+
+class InterviewQuestion(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+
+
+@app.get("/interviews", dependencies=[Depends(authenticate)])
+def list_interviews():
+    if not INTERVIEWS.exists():
+        return []
+    return [
+        json.loads(path.read_text(encoding="utf-8"))["title"]
+        for path in sorted(INTERVIEWS.glob("*.json"))
+    ]
+
+
+@app.post("/interviews", dependencies=[Depends(authenticate)])
+def add_interview(interview: Interview):
+    if not interview.title.strip() or not interview.transcript.strip():
+        raise HTTPException(status_code=400, detail="Informe título e transcrição.")
+    INTERVIEWS.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path = INTERVIEWS / f"{uuid.uuid4().hex}.json"
+    with path.open("x", encoding="utf-8") as output:
+        os.chmod(path, 0o600)
+        json.dump(interview.model_dump(), output, ensure_ascii=False)
+    return {"title": interview.title}
+
+
+@app.post("/interviews/coach", dependencies=[Depends(authenticate)])
+def coach(request: InterviewQuestion):
+    if not request.question.strip():
+        raise HTTPException(status_code=400, detail="Informe uma pergunta.")
+    paths = sorted(INTERVIEWS.glob("*.json")) if INTERVIEWS.exists() else []
+    if not paths:
+        raise HTTPException(status_code=400, detail="Adicione uma entrevista primeiro.")
+    try:
+        documents = []
+        for path in paths:
+            item = json.loads(path.read_text(encoding="utf-8"))
+            documents.append(
+                Document(page_content=item["transcript"], metadata={"source": item["title"]})
+            )
+        chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150).split_documents(
+            documents
+        )
+        store = InMemoryVectorStore.from_documents(chunks, OpenAIEmbeddings())
+        answer, sources = answer_question(
+            store, request.question, ChatOpenAI(model="gpt-4o-mini", temperature=0), coach=True
+        )
+        return {
+            "answer": answer,
+            "sources": [{"title": d.metadata["source"], "text": d.page_content} for d in sources],
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502, detail="Não foi possível analisar as entrevistas."
         ) from exc
