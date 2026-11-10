@@ -52,3 +52,7 @@ Para implantação: `docker compose -f examples/langchain-transcreveai/docker-co
 ## Treino de entrevistas
 
 Na seção de entrevistas, adicione somente transcrições de entrevistas que queira usar no treino. A aplicação armazena os textos em `/docker/langchain-demo/interviews`, fora do Git, e usa recuperação LangChain para montar respostas com trechos identificados por título. O conteúdo recuperado e a pergunta são enviados à OpenAI. O modelo pode errar; confira os trechos e não apresente inferências como realizações comprovadas. O acesso é protegido pela mesma senha da demonstração. Faça backup privado dos arquivos se precisar preservá-los; a aplicação não sincroniza automaticamente com o Tactiq.
+
+## Deploy automático
+
+O workflow `LangChain demo` executa os testes do exemplo e, em push para `main` com mudanças no exemplo, aciona a VPS por uma chave SSH dedicada e restrita. O servidor atualiza a revisão da main, reconstrói o container, verifica autenticação e reverte à revisão anterior se o processo falhar. Segredos e transcrições não entram no Git. A alteração da configuração Traefik é instalada a partir da mesma revisão.

@@ -23,3 +23,23 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -r examples/langchain-transcreveai/requirements.txt
       - run: python -m pytest -q examples/langchain-transcreveai
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    concurrency:
+      group: langchain-demo-production
+      cancel-in-progress: false
+    steps:
+      - name: Deploy da versão atual da main
+        env:
+          SSH_KEY: ${{ secrets.LANGCHAIN_DEPLOY_KEY }}
+          SSH_HOST_KEY: ${{ secrets.LANGCHAIN_SSH_HOST_KEY }}
+        run: |
+          set -eu
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/langchain_key
+          chmod 600 ~/.ssh/langchain_key
+          printf '%s\n' "$SSH_HOST_KEY" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/langchain_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o BatchMode=yes root@76.13.164.69
